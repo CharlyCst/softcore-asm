@@ -26,7 +26,19 @@ version = "0.1.0"
 dependencies = [
  "proc-macro2",
  "quote",
+ "softcore-rv64",
  "syn",
+]
+
+[[package]]
+name = "softcore-prelude"
+version = "0.3.0"
+
+[[package]]
+name = "softcore-rv64"
+version = "0.3.0"
+dependencies = [
+ "softcore-prelude",
 ]
 
 [[package]]

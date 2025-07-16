@@ -8,9 +8,10 @@ use syn::{
 
 #[derive(Clone)]
 enum AsmOperand {
-    Input { reg: Ident, expr: Expr },
-    Output { reg: Ident, expr: Expr },
-    InOut { reg: Ident, expr: Expr },
+    Input { name: Option<Ident>, reg: Ident, expr: Expr },
+    Output { name: Option<Ident>, reg: Ident, expr: Expr },
+    InOut { name: Option<Ident>, reg: Ident, expr: Expr },
+    Options(Expr),
     Raw(Expr),
 }
 
@@ -21,36 +22,93 @@ struct AsmInput {
 
 impl Parse for AsmOperand {
     fn parse(input: ParseStream) -> Result<Self> {
+        // Check for named operand: "name = direction(reg) expr"
+        if input.peek(Ident) && input.peek2(Token![=]) {
+            let name = input.parse::<Ident>()?;
+            input.parse::<Token![=]>()?;
+            
+            // Now parse the direction(reg) expr part
+            if input.peek(Token![in]) {
+                input.parse::<Token![in]>()?;
+                let content;
+                syn::parenthesized!(content in input);
+                let reg = content.parse::<Ident>()?;
+                let expr = input.parse::<Expr>()?;
+                Ok(AsmOperand::Input { name: Some(name), reg, expr })
+            } else if input.peek(Ident) && input.peek2(syn::token::Paren) {
+                let ident = input.parse::<Ident>()?;
+                match ident.to_string().as_str() {
+                    "out" => {
+                        let content;
+                        syn::parenthesized!(content in input);
+                        let reg = content.parse::<Ident>()?;
+                        let expr = input.parse::<Expr>()?;
+                        Ok(AsmOperand::Output { name: Some(name), reg, expr })
+                    }
+                    "inout" => {
+                        let content;
+                        syn::parenthesized!(content in input);
+                        let reg = content.parse::<Ident>()?;
+                        let expr = input.parse::<Expr>()?;
+                        Ok(AsmOperand::InOut { name: Some(name), reg, expr })
+                    }
+                    _ => {
+                        return Err(input.error("Expected operand specification after name ="));
+                    }
+                }
+            } else {
+                return Err(input.error("Expected direction specification after name ="));
+            }
+        }
+        // Check for options(...)
+        else if input.peek(Ident) {
+            let ident = input.fork().parse::<Ident>()?;
+            if ident == "options" && input.peek2(syn::token::Paren) {
+                input.parse::<Ident>()?; // consume "options"
+                let content;
+                syn::parenthesized!(content in input);
+                // Parse the entire content as a single expression (handles comma-separated values)
+                let remaining_tokens = content.parse::<proc_macro2::TokenStream>()?;
+                let expr: Expr = syn::parse2(quote! { (#remaining_tokens) })?;
+                Ok(AsmOperand::Options(expr))
+            } else if input.peek2(syn::token::Paren) {
+                // Handle non-named operand specifications (out/inout)
+                let ident = input.parse::<Ident>()?;
+                match ident.to_string().as_str() {
+                    "out" => {
+                        let content;
+                        syn::parenthesized!(content in input);
+                        let reg = content.parse::<Ident>()?;
+                        let expr = input.parse::<Expr>()?;
+                        Ok(AsmOperand::Output { name: None, reg, expr })
+                    }
+                    "inout" => {
+                        let content;
+                        syn::parenthesized!(content in input);
+                        let reg = content.parse::<Ident>()?;
+                        let expr = input.parse::<Expr>()?;
+                        Ok(AsmOperand::InOut { name: None, reg, expr })
+                    }
+                    _ => {
+                        // Parse as raw expression
+                        let expr = input.parse::<Expr>()?;
+                        Ok(AsmOperand::Raw(expr))
+                    }
+                }
+            } else {
+                // Parse as raw expression
+                let expr = input.parse::<Expr>()?;
+                Ok(AsmOperand::Raw(expr))
+            }
+        }
         // Try to parse 'in' keyword specifically (since 'in' is a keyword in Rust)
-        if input.peek(Token![in]) {
+        else if input.peek(Token![in]) {
             input.parse::<Token![in]>()?;
             let content;
             syn::parenthesized!(content in input);
             let reg = content.parse::<Ident>()?;
             let expr = input.parse::<Expr>()?;
-            Ok(AsmOperand::Input { reg, expr })
-        } else if input.peek(Ident) && input.peek2(syn::token::Paren) {
-            let ident = input.parse::<Ident>()?;
-            match ident.to_string().as_str() {
-                "out" => {
-                    let content;
-                    syn::parenthesized!(content in input);
-                    let reg = content.parse::<Ident>()?;
-                    let expr = input.parse::<Expr>()?;
-                    Ok(AsmOperand::Output { reg, expr })
-                }
-                "inout" => {
-                    let content;
-                    syn::parenthesized!(content in input);
-                    let reg = content.parse::<Ident>()?;
-                    let expr = input.parse::<Expr>()?;
-                    Ok(AsmOperand::InOut { reg, expr })
-                }
-                _ => {
-                    // This shouldn't happen since we checked for Ident followed by Paren
-                    return Err(input.error("Expected operand specification"));
-                }
-            }
+            Ok(AsmOperand::Input { name: None, reg, expr })
         } else {
             // Parse as raw expression
             let expr = input.parse::<Expr>()?;
@@ -88,7 +146,12 @@ fn validate_risc_v_instruction(instruction: &str) -> Vec<String> {
         "lw", "sw", "lb", "sb", "lh", "sh",
         "beq", "bne", "blt", "bge", "bltu", "bgeu",
         "jal", "jalr", "lui", "auipc",
-        "li", "mv", "nop"
+        "li", "mv", "nop",
+        // CSR instructions
+        "csrr", "csrw", "csrs", "csrc",
+        "csrri", "csrwi", "csrsi", "csrci",
+        "csrrw", "csrrs", "csrrc",
+        "csrrwi", "csrrsi", "csrrci"
     ];
     
     // Split instruction into parts
@@ -148,26 +211,41 @@ pub fn rasm(input: TokenStream) -> TokenStream {
     eprintln!("RASM: Found {} operands", asm_input.operands.len());
     for (i, operand) in asm_input.operands.iter().enumerate() {
         match operand {
-            AsmOperand::Input { reg, expr } => {
-                eprintln!("RASM: Operand {}: Input reg={}, expr={}", i, reg, quote!(#expr));
+            AsmOperand::Input { name, reg, expr } => {
+                if let Some(name) = name {
+                    eprintln!("RASM: Operand {}: Named Input {}={} reg={}, expr={}", i, name, reg, reg, quote!(#expr));
+                } else {
+                    eprintln!("RASM: Operand {}: Input reg={}, expr={}", i, reg, quote!(#expr));
+                }
                 let reg_warnings = validate_risc_v_register(&reg.to_string());
                 for warning in reg_warnings {
                     eprintln!("RASM WARNING: {}", warning);
                 }
             }
-            AsmOperand::Output { reg, expr } => {
-                eprintln!("RASM: Operand {}: Output reg={}, expr={}", i, reg, quote!(#expr));
+            AsmOperand::Output { name, reg, expr } => {
+                if let Some(name) = name {
+                    eprintln!("RASM: Operand {}: Named Output {}={} reg={}, expr={}", i, name, reg, reg, quote!(#expr));
+                } else {
+                    eprintln!("RASM: Operand {}: Output reg={}, expr={}", i, reg, quote!(#expr));
+                }
                 let reg_warnings = validate_risc_v_register(&reg.to_string());
                 for warning in reg_warnings {
                     eprintln!("RASM WARNING: {}", warning);
                 }
             }
-            AsmOperand::InOut { reg, expr } => {
-                eprintln!("RASM: Operand {}: InOut reg={}, expr={}", i, reg, quote!(#expr));
+            AsmOperand::InOut { name, reg, expr } => {
+                if let Some(name) = name {
+                    eprintln!("RASM: Operand {}: Named InOut {}={} reg={}, expr={}", i, name, reg, reg, quote!(#expr));
+                } else {
+                    eprintln!("RASM: Operand {}: InOut reg={}, expr={}", i, reg, quote!(#expr));
+                }
                 let reg_warnings = validate_risc_v_register(&reg.to_string());
                 for warning in reg_warnings {
                     eprintln!("RASM WARNING: {}", warning);
                 }
+            }
+            AsmOperand::Options(expr) => {
+                eprintln!("RASM: Operand {}: Options expr={}", i, quote!(#expr));
             }
             AsmOperand::Raw(expr) => {
                 eprintln!("RASM: Operand {}: Raw expr={}", i, quote!(#expr));

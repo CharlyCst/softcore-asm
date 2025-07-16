@@ -10,6 +10,7 @@ proc-macro = true
 syn = { version = "2.0", features = ["full"] }
 quote = "1.0"
 proc-macro2 = "1.0"
+softcore-rv64 = { path = "../../projects/sail/virt-sail/rv64/" }
 
 [[example]]
 name = "test_rasm"
@@ -30,3 +31,11 @@ path = "examples/test_expansion.rs"
 [[example]]
 name = "test_cfg"
 path = "examples/test_cfg.rs"
+
+[[example]]
+name = "softcore"
+path = "examples/softcore.rs"
+
+[[example]]
+name = "test_mixed_syntax"
+path = "examples/test_mixed_syntax.rs"
