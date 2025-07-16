@@ -25,6 +25,7 @@ struct AsmInput {
 struct InstructionInfo {
     instruction: String,           // "csrrw"
     operands: Vec<String>,        // ["{prev}", "mscratch", "{x}"]
+    placeholders: Vec<String>,    // ["{prev}", "{x}"]
     csr_name: Option<String>,     // Some("mscratch")
     is_csr: bool,                 // true
 }
@@ -39,10 +40,18 @@ struct RegAllocation {
 }
 
 #[derive(Debug)]
+struct InstructionOperandMapping {
+    instruction_index: usize,
+    placeholders: Vec<String>,           // ["{prev1}", "{x1}"]
+    operand_registers: HashMap<String, String>, // "{prev1}" -> "X2"
+}
+
+#[derive(Debug)]
 struct MultiInstructionAnalysis {
     instructions: Vec<InstructionInfo>,
     operand_map: HashMap<String, usize>,     // operand name -> index
     register_allocation: Vec<RegAllocation>,
+    instruction_mappings: Vec<InstructionOperandMapping>,
     has_csr_operations: bool,
 }
 
@@ -258,6 +267,34 @@ fn parse_instruction_operands(instruction: &str) -> Vec<String> {
     }
 }
 
+fn extract_placeholders(instruction: &str) -> Vec<String> {
+    let mut placeholders = Vec::new();
+    let mut chars = instruction.chars().peekable();
+    
+    while let Some(&ch) = chars.peek() {
+        if ch == '{' {
+            chars.next(); // consume '{'
+            let mut placeholder = String::new();
+            
+            while let Some(&ch) = chars.peek() {
+                if ch == '}' {
+                    chars.next(); // consume '}'
+                    break;
+                }
+                placeholder.push(chars.next().unwrap());
+            }
+            
+            if !placeholder.is_empty() {
+                placeholders.push(format!("{{{}}}", placeholder));
+            }
+        } else {
+            chars.next();
+        }
+    }
+    
+    placeholders
+}
+
 fn parse_instructions(assembly_template: &str) -> Vec<InstructionInfo> {
     let instructions: Vec<&str> = assembly_template
         .lines()
@@ -269,10 +306,12 @@ fn parse_instructions(assembly_template: &str) -> Vec<InstructionInfo> {
         let is_csr = is_csr_instruction(instruction);
         let csr_name = extract_csr_name(instruction);
         let operands = parse_instruction_operands(instruction);
+        let placeholders = extract_placeholders(instruction);
         
         InstructionInfo {
             instruction: instruction.to_string(),
             operands,
+            placeholders,
             csr_name,
             is_csr,
         }
@@ -299,44 +338,54 @@ fn build_operand_map(operands: &[AsmOperand]) -> HashMap<String, usize> {
     map
 }
 
-fn analyze_multi_instructions(assembly_template: &str, operands: &[AsmOperand]) -> MultiInstructionAnalysis {
-    let instructions = parse_instructions(assembly_template);
-    let operand_map = build_operand_map(operands);
-    let has_csr_operations = instructions.iter().any(|instr| instr.is_csr);
-    
-    // For now, create a simple register allocation
+fn build_operand_register_map(
+    instructions: &[InstructionInfo],
+    operands: &[AsmOperand],
+    operand_map: &HashMap<String, usize>,
+) -> (Vec<RegAllocation>, Vec<InstructionOperandMapping>) {
     let mut register_allocation = Vec::new();
+    let mut instruction_mappings = Vec::new();
     let mut reg_counter = 1;
     
+    // Create a mapping from operand names to registers
+    let mut operand_to_register = HashMap::new();
+    
+    // First pass: assign registers to all operands
     for (index, operand) in operands.iter().enumerate() {
         match operand {
-            AsmOperand::Input { .. } => {
+            AsmOperand::Input { name: Some(name), .. } => {
+                let register = format!("X{}", reg_counter);
+                operand_to_register.insert(name.to_string(), register.clone());
                 register_allocation.push(RegAllocation {
                     operand_index: index,
-                    register: format!("X{}", reg_counter),
+                    register,
                     is_input: true,
                     is_output: false,
-                    used_in_instructions: vec![], // Will be populated later
+                    used_in_instructions: vec![],
                 });
                 reg_counter += 1;
             }
-            AsmOperand::Output { .. } => {
+            AsmOperand::Output { name: Some(name), .. } => {
+                let register = format!("X{}", reg_counter);
+                operand_to_register.insert(name.to_string(), register.clone());
                 register_allocation.push(RegAllocation {
                     operand_index: index,
-                    register: format!("X{}", reg_counter),
+                    register,
                     is_input: false,
                     is_output: true,
-                    used_in_instructions: vec![], // Will be populated later
+                    used_in_instructions: vec![],
                 });
                 reg_counter += 1;
             }
-            AsmOperand::InOut { .. } => {
+            AsmOperand::InOut { name: Some(name), .. } => {
+                let register = format!("X{}", reg_counter);
+                operand_to_register.insert(name.to_string(), register.clone());
                 register_allocation.push(RegAllocation {
                     operand_index: index,
-                    register: format!("X{}", reg_counter),
+                    register,
                     is_input: true,
                     is_output: true,
-                    used_in_instructions: vec![], // Will be populated later
+                    used_in_instructions: vec![],
                 });
                 reg_counter += 1;
             }
@@ -344,10 +393,47 @@ fn analyze_multi_instructions(assembly_template: &str, operands: &[AsmOperand]) 
         }
     }
     
+    // Second pass: create instruction mappings
+    for (instr_index, instruction) in instructions.iter().enumerate() {
+        let mut operand_registers = HashMap::new();
+        
+        // Map each placeholder to its register
+        for placeholder in &instruction.placeholders {
+            // Remove the braces to get the operand name
+            let operand_name = placeholder.trim_start_matches('{').trim_end_matches('}');
+            
+            if let Some(register) = operand_to_register.get(operand_name) {
+                operand_registers.insert(placeholder.clone(), register.clone());
+            }
+        }
+        
+        instruction_mappings.push(InstructionOperandMapping {
+            instruction_index: instr_index,
+            placeholders: instruction.placeholders.clone(),
+            operand_registers,
+        });
+    }
+    
+    (register_allocation, instruction_mappings)
+}
+
+fn analyze_multi_instructions(assembly_template: &str, operands: &[AsmOperand]) -> MultiInstructionAnalysis {
+    let instructions = parse_instructions(assembly_template);
+    let operand_map = build_operand_map(operands);
+    let has_csr_operations = instructions.iter().any(|instr| instr.is_csr);
+    
+    // Build proper operand-to-register mapping
+    let (register_allocation, instruction_mappings) = build_operand_register_map(
+        &instructions,
+        operands,
+        &operand_map,
+    );
+    
     MultiInstructionAnalysis {
         instructions,
         operand_map,
         register_allocation,
+        instruction_mappings,
         has_csr_operations,
     }
 }
@@ -374,23 +460,55 @@ fn generate_softcore_code(analysis: &MultiInstructionAnalysis, operands: &[AsmOp
         }
     }
     
-    // Generate instruction execution code
-    for instr in &analysis.instructions {
+    // Generate instruction execution code using proper register mapping
+    for (instr_index, instr) in analysis.instructions.iter().enumerate() {
         if instr.is_csr {
             if let Some(csr_name) = &instr.csr_name {
-                // This is a simplified approach - we'll need to parse the operands better
-                // For now, assume csrrw format: "csrrw {dest}, csr, {src}"
                 let csr_name_str = csr_name.clone();
                 
-                // Find the registers used in this instruction
-                // This is a simplified approach - we need better operand matching
-                if analysis.register_allocation.len() >= 2 {
-                    let src_reg = syn::parse_str::<syn::Ident>(&analysis.register_allocation[0].register).unwrap();
-                    let dest_reg = syn::parse_str::<syn::Ident>(&analysis.register_allocation[1].register).unwrap();
-                    
-                    instruction_code.push(quote! {
-                        core.csrrw(reg::#dest_reg, csr_name_map_backwards(#csr_name_str).bits(), reg::#src_reg).unwrap();
-                    });
+                // Find the mapping for this instruction
+                if let Some(mapping) = analysis.instruction_mappings.get(instr_index) {
+                    // Parse the instruction to identify dest and src operands
+                    // Format: "csrrw dest, csr, src"
+                    let parts: Vec<&str> = instr.instruction.split_whitespace().collect();
+                    if parts.len() >= 4 {
+                        let dest_operand = parts[1].trim_end_matches(',');
+                        let src_operand = parts[3].trim_end_matches(',');
+                        
+                        // Handle destination operand
+                        let dest_reg_code = if dest_operand.starts_with('{') && dest_operand.ends_with('}') {
+                            // It's a placeholder
+                            if let Some(dest_reg) = mapping.operand_registers.get(dest_operand) {
+                                let dest_reg_name = syn::parse_str::<syn::Ident>(dest_reg).unwrap();
+                                quote! { reg::#dest_reg_name }
+                            } else {
+                                continue; // Skip if we can't find the register
+                            }
+                        } else {
+                            // It's a literal register
+                            let dest_reg_name = syn::parse_str::<syn::Ident>(&dest_operand.to_uppercase()).unwrap();
+                            quote! { reg::#dest_reg_name }
+                        };
+                        
+                        // Handle source operand
+                        let src_reg_code = if src_operand.starts_with('{') && src_operand.ends_with('}') {
+                            // It's a placeholder
+                            if let Some(src_reg) = mapping.operand_registers.get(src_operand) {
+                                let src_reg_name = syn::parse_str::<syn::Ident>(src_reg).unwrap();
+                                quote! { reg::#src_reg_name }
+                            } else {
+                                continue; // Skip if we can't find the register
+                            }
+                        } else {
+                            // It's a literal register
+                            let src_reg_name = syn::parse_str::<syn::Ident>(&src_operand.to_uppercase()).unwrap();
+                            quote! { reg::#src_reg_name }
+                        };
+                        
+                        instruction_code.push(quote! {
+                            core.csrrw(#dest_reg_code, csr_name_map_backwards(#csr_name_str).bits(), #src_reg_code).unwrap();
+                        });
+                    }
                 }
             }
         }
