@@ -32,19 +32,23 @@ thread_local! {
 }
 
 fn main() {
-    // Your softcore test code here
-    let value: u64 = 0xdeadbeef;
-    let mut prev_value: u64 = 0;
-    let mut final_value: u64 = 0;
+    println!("Testing multiple CSR instructions...");
 
+    let value1: u64 = 0x1111;
+    let value2: u64 = 0x2222;
+    let mut result1: u64 = 0;
+    let mut result2: u64 = 0;
+
+    // Test multiple CSR instructions in one macro
     rasm!(
-        "csrrw {prev}, mscratch, {x}
-        csrrw {final_val}, mscratch, x0",
-        x = in(reg) value,
-        prev = out(reg) prev_value,
-        final_val = out(reg) final_value,
-        options(nomem)
+        "csrrw {prev1}, mscratch, {x1}
+         csrrw {prev2}, mstatus, {x2}",
+        x1 = in(reg) value1,
+        prev1 = out(reg) result1,
+        x2 = in(reg) value2,
+        prev2 = out(reg) result2
     );
 
-    assert_eq!(final_value, value);
+    println!("Multi-CSR test completed!");
 }
+

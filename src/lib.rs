@@ -5,6 +5,7 @@ use syn::{
     parse_macro_input,
     Expr, Ident, LitStr, Token,
 };
+use std::collections::HashMap;
 
 #[derive(Clone)]
 enum AsmOperand {
@@ -18,6 +19,31 @@ enum AsmOperand {
 struct AsmInput {
     template: LitStr,
     operands: Vec<AsmOperand>,
+}
+
+#[derive(Debug, Clone)]
+struct InstructionInfo {
+    instruction: String,           // "csrrw"
+    operands: Vec<String>,        // ["{prev}", "mscratch", "{x}"]
+    csr_name: Option<String>,     // Some("mscratch")
+    is_csr: bool,                 // true
+}
+
+#[derive(Debug, Clone)]
+struct RegAllocation {
+    operand_index: usize,
+    register: String,        // "X1", "X2", etc.
+    is_input: bool,
+    is_output: bool,
+    used_in_instructions: Vec<usize>,  // which instructions use this register
+}
+
+#[derive(Debug)]
+struct MultiInstructionAnalysis {
+    instructions: Vec<InstructionInfo>,
+    operand_map: HashMap<String, usize>,     // operand name -> index
+    register_allocation: Vec<RegAllocation>,
+    has_csr_operations: bool,
 }
 
 impl Parse for AsmOperand {
@@ -188,6 +214,214 @@ fn validate_risc_v_register(reg: &str) -> Vec<String> {
     warnings
 }
 
+fn is_csr_instruction(instruction: &str) -> bool {
+    let csr_instructions = [
+        "csrr", "csrw", "csrs", "csrc",
+        "csrri", "csrwi", "csrsi", "csrci",
+        "csrrw", "csrrs", "csrrc",
+        "csrrwi", "csrrsi", "csrrci"
+    ];
+    
+    let parts: Vec<&str> = instruction.split_whitespace().collect();
+    if let Some(op) = parts.first() {
+        csr_instructions.contains(op)
+    } else {
+        false
+    }
+}
+
+fn extract_csr_name(instruction: &str) -> Option<String> {
+    let parts: Vec<&str> = instruction.split_whitespace().collect();
+    if parts.len() >= 3 && is_csr_instruction(instruction) {
+        // For CSR instructions, the CSR name is typically the second operand
+        // e.g., "csrrw {prev}, mscratch, {x}" -> "mscratch"
+        let csr_part = parts[2].trim_end_matches(',');
+        if !csr_part.starts_with('{') && !csr_part.ends_with('}') {
+            Some(csr_part.to_string())
+        } else {
+            None
+        }
+    } else {
+        None
+    }
+}
+
+fn parse_instruction_operands(instruction: &str) -> Vec<String> {
+    let parts: Vec<&str> = instruction.split_whitespace().collect();
+    if parts.len() > 1 {
+        // Skip the instruction name and collect operands
+        parts[1..].iter()
+            .map(|part| part.trim_end_matches(',').to_string())
+            .collect()
+    } else {
+        Vec::new()
+    }
+}
+
+fn parse_instructions(assembly_template: &str) -> Vec<InstructionInfo> {
+    let instructions: Vec<&str> = assembly_template
+        .lines()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty())
+        .collect();
+    
+    instructions.iter().map(|instruction| {
+        let is_csr = is_csr_instruction(instruction);
+        let csr_name = extract_csr_name(instruction);
+        let operands = parse_instruction_operands(instruction);
+        
+        InstructionInfo {
+            instruction: instruction.to_string(),
+            operands,
+            csr_name,
+            is_csr,
+        }
+    }).collect()
+}
+
+fn build_operand_map(operands: &[AsmOperand]) -> HashMap<String, usize> {
+    let mut map = HashMap::new();
+    
+    for (index, operand) in operands.iter().enumerate() {
+        match operand {
+            AsmOperand::Input { name: Some(name), .. } |
+            AsmOperand::Output { name: Some(name), .. } |
+            AsmOperand::InOut { name: Some(name), .. } => {
+                map.insert(name.to_string(), index);
+            }
+            _ => {
+                // For positional operands, we'll handle them differently
+                // This is a simplified approach for now
+            }
+        }
+    }
+    
+    map
+}
+
+fn analyze_multi_instructions(assembly_template: &str, operands: &[AsmOperand]) -> MultiInstructionAnalysis {
+    let instructions = parse_instructions(assembly_template);
+    let operand_map = build_operand_map(operands);
+    let has_csr_operations = instructions.iter().any(|instr| instr.is_csr);
+    
+    // For now, create a simple register allocation
+    let mut register_allocation = Vec::new();
+    let mut reg_counter = 1;
+    
+    for (index, operand) in operands.iter().enumerate() {
+        match operand {
+            AsmOperand::Input { .. } => {
+                register_allocation.push(RegAllocation {
+                    operand_index: index,
+                    register: format!("X{}", reg_counter),
+                    is_input: true,
+                    is_output: false,
+                    used_in_instructions: vec![], // Will be populated later
+                });
+                reg_counter += 1;
+            }
+            AsmOperand::Output { .. } => {
+                register_allocation.push(RegAllocation {
+                    operand_index: index,
+                    register: format!("X{}", reg_counter),
+                    is_input: false,
+                    is_output: true,
+                    used_in_instructions: vec![], // Will be populated later
+                });
+                reg_counter += 1;
+            }
+            AsmOperand::InOut { .. } => {
+                register_allocation.push(RegAllocation {
+                    operand_index: index,
+                    register: format!("X{}", reg_counter),
+                    is_input: true,
+                    is_output: true,
+                    used_in_instructions: vec![], // Will be populated later
+                });
+                reg_counter += 1;
+            }
+            _ => {} // Skip Options and Raw for now
+        }
+    }
+    
+    MultiInstructionAnalysis {
+        instructions,
+        operand_map,
+        register_allocation,
+        has_csr_operations,
+    }
+}
+
+fn generate_softcore_code(analysis: &MultiInstructionAnalysis, operands: &[AsmOperand]) -> proc_macro2::TokenStream {
+    let mut setup_code = Vec::new();
+    let mut instruction_code = Vec::new();
+    let mut extract_code = Vec::new();
+    
+    // Generate setup code for input registers
+    for reg_alloc in &analysis.register_allocation {
+        if reg_alloc.is_input {
+            if let Some(operand) = operands.get(reg_alloc.operand_index) {
+                let reg_name = syn::parse_str::<syn::Ident>(&reg_alloc.register).unwrap();
+                match operand {
+                    AsmOperand::Input { expr, .. } | AsmOperand::InOut { expr, .. } => {
+                        setup_code.push(quote! {
+                            core.set(reg::#reg_name, #expr);
+                        });
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    
+    // Generate instruction execution code
+    for instr in &analysis.instructions {
+        if instr.is_csr {
+            if let Some(csr_name) = &instr.csr_name {
+                // This is a simplified approach - we'll need to parse the operands better
+                // For now, assume csrrw format: "csrrw {dest}, csr, {src}"
+                let csr_name_str = csr_name.clone();
+                
+                // Find the registers used in this instruction
+                // This is a simplified approach - we need better operand matching
+                if analysis.register_allocation.len() >= 2 {
+                    let src_reg = syn::parse_str::<syn::Ident>(&analysis.register_allocation[0].register).unwrap();
+                    let dest_reg = syn::parse_str::<syn::Ident>(&analysis.register_allocation[1].register).unwrap();
+                    
+                    instruction_code.push(quote! {
+                        core.csrrw(reg::#dest_reg, csr_name_map_backwards(#csr_name_str).bits(), reg::#src_reg).unwrap();
+                    });
+                }
+            }
+        }
+    }
+    
+    // Generate extraction code for output registers
+    for reg_alloc in &analysis.register_allocation {
+        if reg_alloc.is_output {
+            if let Some(operand) = operands.get(reg_alloc.operand_index) {
+                let reg_name = syn::parse_str::<syn::Ident>(&reg_alloc.register).unwrap();
+                match operand {
+                    AsmOperand::Output { expr, .. } | AsmOperand::InOut { expr, .. } => {
+                        extract_code.push(quote! {
+                            #expr = core.get(reg::#reg_name);
+                        });
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    
+    quote! {
+        SOFT_CORE.with_borrow_mut(|core| {
+            #(#setup_code)*
+            #(#instruction_code)*
+            #(#extract_code)*
+        })
+    }
+}
+
 #[proc_macro]
 pub fn rasm(input: TokenStream) -> TokenStream {
     // Store original input for re-emission
@@ -253,12 +487,33 @@ pub fn rasm(input: TokenStream) -> TokenStream {
         }
     }
     
-    // Generate conditional output based on target architecture
-    let output = quote! {
-        {
-            #[cfg(target_arch = "riscv64")]
-            unsafe {
-                core::arch::asm!(#original_input)
+    // Analyze instructions for multi-instruction and CSR support
+    let analysis = analyze_multi_instructions(&assembly_string, &asm_input.operands);
+    
+    // Generate conditional output based on target architecture and CSR operations
+    let output = if analysis.has_csr_operations {
+        let softcore_code = generate_softcore_code(&analysis, &asm_input.operands);
+        quote! {
+            {
+                #[cfg(target_arch = "riscv64")]
+                unsafe {
+                    core::arch::asm!(#original_input)
+                }
+                
+                #[cfg(feature = "softcore")]
+                {
+                    #softcore_code
+                }
+            }
+        }
+    } else {
+        // Non-CSR instructions - existing behavior
+        quote! {
+            {
+                #[cfg(target_arch = "riscv64")]
+                unsafe {
+                    core::arch::asm!(#original_input)
+                }
             }
         }
     };

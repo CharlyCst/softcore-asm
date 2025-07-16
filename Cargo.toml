@@ -12,6 +12,9 @@ quote = "1.0"
 proc-macro2 = "1.0"
 softcore-rv64 = { path = "../../projects/sail/virt-sail/rv64/" }
 
+[features]
+softcore = []
+
 [[example]]
 name = "test_rasm"
 path = "examples/test_rasm.rs"
@@ -39,3 +42,7 @@ path = "examples/softcore.rs"
 [[example]]
 name = "test_mixed_syntax"
 path = "examples/test_mixed_syntax.rs"
+
+[[example]]
+name = "test_multi_csr"
+path = "examples/test_multi_csr.rs"
