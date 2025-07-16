@@ -57,20 +57,33 @@ cargo run --example test_operands    # Advanced operand parsing
 cargo run --example test_validation  # Validation features
 ```
 
+## Conditional Compilation
+
+The macro uses conditional compilation to provide different behavior based on the target architecture:
+
+- **RISC-V targets** (`target_arch = "riscv64"`): Generates actual `core::arch::asm!` inline assembly blocks + debug output
+- **Other targets**: Provides debug output only (no assembly execution)
+
+This allows you to:
+- Develop and test RISC-V assembly code on any architecture
+- Get validation and debugging on all platforms
+- Have the assembly actually execute when targeting RISC-V
+
 ## Current Status
 
-This is an initial implementation that focuses on parsing and validation. The macro currently:
+This implementation provides comprehensive RISC-V assembly macro functionality:
 
 ✅ Parses assembly strings  
 ✅ Extracts and validates operands  
 ✅ Validates RISC-V instructions and registers  
 ✅ Provides debug output  
+✅ **Conditional inline assembly generation for RISC-V targets**  
+✅ **Token re-emission for perfect `asm!` syntax compatibility**  
 
 🔄 Future enhancements could include:  
-- Actual inline assembly code generation  
 - More comprehensive RISC-V instruction set support  
 - Better error handling and reporting  
-- Integration with actual RISC-V targets  
+- Support for additional RISC-V variants (32-bit, embedded profiles)  
 
 ## Implementation Details
 
@@ -79,5 +92,13 @@ The macro uses:
 - `quote` for generating Rust code
 - Custom parsing logic for `asm!` macro syntax
 - RISC-V instruction and register validation
+- **Token re-emission for perfect syntax preservation**
+- **Conditional compilation via `cfg(target_arch = "riscv64")`**
 
-Key insight: The `in` keyword in Rust is a reserved token, so it requires special handling with `Token![in]` rather than parsing as a regular identifier.
+### Key Technical Insights
+
+1. **Keyword Handling**: The `in` keyword in Rust is a reserved token, so it requires special handling with `Token![in]` rather than parsing as a regular identifier.
+
+2. **Token Re-emission**: Instead of reconstructing operands from parsed syntax trees, the macro stores and re-emits the original input tokens. This guarantees perfect compatibility with `asm!` syntax.
+
+3. **Conditional Generation**: Uses `cfg(target_arch = "riscv64")` to conditionally generate `core::arch::asm!` blocks only for RISC-V targets while providing debug output on all architectures.

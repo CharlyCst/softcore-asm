@@ -22,3 +22,11 @@ path = "examples/test_operands.rs"
 [[example]]
 name = "test_validation"
 path = "examples/test_validation.rs"
+
+[[example]]
+name = "test_expansion"
+path = "examples/test_expansion.rs"
+
+[[example]]
+name = "test_cfg"
+path = "examples/test_cfg.rs"

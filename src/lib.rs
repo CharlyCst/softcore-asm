@@ -127,6 +127,9 @@ fn validate_risc_v_register(reg: &str) -> Vec<String> {
 
 #[proc_macro]
 pub fn rasm(input: TokenStream) -> TokenStream {
+    // Store original input for re-emission
+    let original_input: proc_macro2::TokenStream = input.clone().into();
+    
     let asm_input = parse_macro_input!(input as AsmInput);
     
     // Extract the assembly string
@@ -172,9 +175,14 @@ pub fn rasm(input: TokenStream) -> TokenStream {
         }
     }
     
-    // For now, just return empty block
+    // Generate conditional output based on target architecture
     let output = quote! {
-        {}
+        {
+            #[cfg(target_arch = "riscv64")]
+            unsafe {
+                core::arch::asm!(#original_input)
+            }
+        }
     };
     output.into()
 }
