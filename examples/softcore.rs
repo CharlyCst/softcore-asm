@@ -47,4 +47,7 @@ fn main() {
     );
 
     assert_eq!(final_value, value);
+
+    let pmpcfg = 0;
+    rasm!("csrw pmpcfg10, {cfg}", cfg = in(reg) pmpcfg, options(nomem));
 }
