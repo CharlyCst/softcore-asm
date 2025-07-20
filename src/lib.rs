@@ -261,17 +261,34 @@ fn is_csr_instruction(instruction: &str) -> bool {
 
 fn extract_csr_name(instruction: &str) -> Option<String> {
     let parts: Vec<&str> = instruction.split_whitespace().collect();
-    if parts.len() >= 3 && is_csr_instruction(instruction) {
-        // For CSR instructions, the CSR name is typically the second operand
-        // e.g., "csrrw {prev}, mscratch, {x}" -> "mscratch"
-        let csr_part = parts[2].trim_end_matches(',');
-        if !csr_part.starts_with('{') && !csr_part.ends_with('}') {
-            Some(csr_part.to_string())
-        } else {
-            None
+    
+    // Early return if not a valid CSR instruction
+    if parts.len() < 2 || !is_csr_instruction(instruction) {
+        return None;
+    }
+    
+    let opcode = parts[0];
+    
+    // Determine CSR position based on instruction format:
+    // 2-operand: "csrw csr, rs" -> CSR at index 1
+    // 3-operand: "csrrw rd, csr, rs" -> CSR at index 2
+    let csr_index = match opcode {
+        "csrw" | "csrs" | "csrc" | "csrwi" | "csrsi" | "csrci" => {
+            if parts.len() >= 2 { 1 } else { return None; }
         }
-    } else {
+        "csrrw" | "csrrs" | "csrrc" | "csrrwi" | "csrrsi" | "csrrci" | "csrr" | "csrri" => {
+            if parts.len() >= 3 { 2 } else { return None; }
+        }
+        _ => return None,
+    };
+    
+    let csr_part = parts[csr_index].trim_end_matches(',');
+    
+    // Return CSR name only if it's not a placeholder
+    if csr_part.starts_with('{') && csr_part.ends_with('}') {
         None
+    } else {
+        Some(csr_part.to_string())
     }
 }
 
@@ -456,52 +473,83 @@ fn generate_softcore_code(
 
                 // Find the mapping for this instruction
                 if let Some(mapping) = analysis.instruction_mappings.get(instr_index) {
-                    // Parse the instruction to identify dest and src operands
-                    // Format: "csrrw dest, csr, src"
                     let parts: Vec<&str> = instr.instruction.split_whitespace().collect();
-                    if parts.len() >= 4 {
-                        let dest_operand = parts[1].trim_end_matches(',');
-                        let src_operand = parts[3].trim_end_matches(',');
-
-                        // Handle destination operand
-                        let dest_reg_code = if dest_operand.starts_with('{')
-                            && dest_operand.ends_with('}')
-                        {
-                            // It's a placeholder
-                            if let Some(dest_reg) = mapping.operand_registers.get(dest_operand) {
-                                let dest_reg_name = syn::parse_str::<syn::Ident>(dest_reg).unwrap();
-                                quote! { reg::#dest_reg_name }
-                            } else {
-                                continue; // Skip if we can't find the register
+                    let opcode = parts[0];
+                    
+                    match opcode {
+                        // 2-operand CSR instructions: "csrw csr, rs"
+                        "csrw" | "csrs" | "csrc" | "csrwi" | "csrsi" | "csrci" => {
+                            if parts.len() >= 3 {
+                                let src_operand = parts[2].trim_end_matches(',');
+                                
+                                // Handle source operand  
+                                let src_reg_code = if src_operand.starts_with('{') && src_operand.ends_with('}') {
+                                    // It's a placeholder
+                                    if let Some(src_reg) = mapping.operand_registers.get(src_operand) {
+                                        let src_reg_name = syn::parse_str::<syn::Ident>(src_reg).unwrap();
+                                        quote! { reg::#src_reg_name }
+                                    } else {
+                                        continue; // Skip if we can't find the register
+                                    }
+                                } else {
+                                    // It's a literal register
+                                    let src_reg_name = syn::parse_str::<syn::Ident>(&src_operand.to_uppercase()).unwrap();
+                                    quote! { reg::#src_reg_name }
+                                };
+                                
+                                // For csrw-style instructions, we use csrrw with x0 as destination
+                                instruction_code.push(quote! {
+                                    core.csrrw(reg::X0, csr_name_map_backwards(#csr_name_str).bits(), #src_reg_code).unwrap();
+                                });
                             }
-                        } else {
-                            // It's a literal register
-                            let dest_reg_name =
-                                syn::parse_str::<syn::Ident>(&dest_operand.to_uppercase()).unwrap();
-                            quote! { reg::#dest_reg_name }
-                        };
+                        }
+                        
+                        // 3-operand CSR instructions: "csrrw rd, csr, rs" 
+                        "csrrw" | "csrrs" | "csrrc" | "csrrwi" | "csrrsi" | "csrrci" | "csrr" | "csrri" => {
+                            if parts.len() >= 4 {
+                                let dest_operand = parts[1].trim_end_matches(',');
+                                let src_operand = parts[3].trim_end_matches(',');
 
-                        // Handle source operand
-                        let src_reg_code = if src_operand.starts_with('{')
-                            && src_operand.ends_with('}')
-                        {
-                            // It's a placeholder
-                            if let Some(src_reg) = mapping.operand_registers.get(src_operand) {
-                                let src_reg_name = syn::parse_str::<syn::Ident>(src_reg).unwrap();
-                                quote! { reg::#src_reg_name }
-                            } else {
-                                continue; // Skip if we can't find the register
+                                // Handle destination operand
+                                let dest_reg_code = if dest_operand.starts_with('{') && dest_operand.ends_with('}') {
+                                    // It's a placeholder
+                                    if let Some(dest_reg) = mapping.operand_registers.get(dest_operand) {
+                                        let dest_reg_name = syn::parse_str::<syn::Ident>(dest_reg).unwrap();
+                                        quote! { reg::#dest_reg_name }
+                                    } else {
+                                        continue; // Skip if we can't find the register
+                                    }
+                                } else {
+                                    // It's a literal register
+                                    let dest_reg_name = syn::parse_str::<syn::Ident>(&dest_operand.to_uppercase()).unwrap();
+                                    quote! { reg::#dest_reg_name }
+                                };
+
+                                // Handle source operand
+                                let src_reg_code = if src_operand.starts_with('{') && src_operand.ends_with('}') {
+                                    // It's a placeholder
+                                    if let Some(src_reg) = mapping.operand_registers.get(src_operand) {
+                                        let src_reg_name = syn::parse_str::<syn::Ident>(src_reg).unwrap();
+                                        quote! { reg::#src_reg_name }
+                                    } else {
+                                        continue; // Skip if we can't find the register
+                                    }
+                                } else {
+                                    // It's a literal register
+                                    let src_reg_name = syn::parse_str::<syn::Ident>(&src_operand.to_uppercase()).unwrap();
+                                    quote! { reg::#src_reg_name }
+                                };
+
+                                instruction_code.push(quote! {
+                                    core.csrrw(#dest_reg_code, csr_name_map_backwards(#csr_name_str).bits(), #src_reg_code).unwrap();
+                                });
                             }
-                        } else {
-                            // It's a literal register
-                            let src_reg_name =
-                                syn::parse_str::<syn::Ident>(&src_operand.to_uppercase()).unwrap();
-                            quote! { reg::#src_reg_name }
-                        };
-
-                        instruction_code.push(quote! {
-                            core.csrrw(#dest_reg_code, csr_name_map_backwards(#csr_name_str).bits(), #src_reg_code).unwrap();
-                        });
+                        }
+                        
+                        _ => {
+                            // Unknown CSR instruction format
+                            continue;
+                        }
                     }
                 }
             }
@@ -637,6 +685,7 @@ pub fn rasm(input: TokenStream) -> TokenStream {
 
     // Analyze instructions for multi-instruction and CSR support
     let analysis = analyze_multi_instructions(&assembly_string, &asm_input.operands);
+    eprintln!("{:#?}", analysis);
 
     // Generate conditional output based on target architecture and CSR operations
     let output = if analysis.has_csr_operations {

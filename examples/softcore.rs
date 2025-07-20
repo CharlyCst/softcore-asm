@@ -48,6 +48,6 @@ fn main() {
 
     assert_eq!(final_value, value);
 
-    let pmpcfg = 0;
-    rasm!("csrw pmpcfg10, {cfg}", cfg = in(reg) pmpcfg, options(nomem));
+    let mscratch_val = 0x1234;
+    rasm!("csrw mscratch, {cfg}", cfg = in(reg) mscratch_val, options(nomem));
 }
