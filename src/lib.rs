@@ -24,7 +24,6 @@ struct AsmInput {
 #[derive(Debug, Clone)]
 struct InstructionInfo {
     instruction: String,           // "csrrw"
-    operands: Vec<String>,        // ["{prev}", "mscratch", "{x}"]
     placeholders: Vec<String>,    // ["{prev}", "{x}"]
     csr_name: Option<String>,     // Some("mscratch")
     is_csr: bool,                 // true
@@ -36,20 +35,16 @@ struct RegAllocation {
     register: String,        // "X1", "X2", etc.
     is_input: bool,
     is_output: bool,
-    used_in_instructions: Vec<usize>,  // which instructions use this register
 }
 
 #[derive(Debug)]
 struct InstructionOperandMapping {
-    instruction_index: usize,
-    placeholders: Vec<String>,           // ["{prev1}", "{x1}"]
     operand_registers: HashMap<String, String>, // "{prev1}" -> "X2"
 }
 
 #[derive(Debug)]
 struct MultiInstructionAnalysis {
     instructions: Vec<InstructionInfo>,
-    operand_map: HashMap<String, usize>,     // operand name -> index
     register_allocation: Vec<RegAllocation>,
     instruction_mappings: Vec<InstructionOperandMapping>,
     has_csr_operations: bool,
@@ -255,17 +250,6 @@ fn extract_csr_name(instruction: &str) -> Option<String> {
     }
 }
 
-fn parse_instruction_operands(instruction: &str) -> Vec<String> {
-    let parts: Vec<&str> = instruction.split_whitespace().collect();
-    if parts.len() > 1 {
-        // Skip the instruction name and collect operands
-        parts[1..].iter()
-            .map(|part| part.trim_end_matches(',').to_string())
-            .collect()
-    } else {
-        Vec::new()
-    }
-}
 
 fn extract_placeholders(instruction: &str) -> Vec<String> {
     let mut placeholders = Vec::new();
@@ -305,12 +289,10 @@ fn parse_instructions(assembly_template: &str) -> Vec<InstructionInfo> {
     instructions.iter().map(|instruction| {
         let is_csr = is_csr_instruction(instruction);
         let csr_name = extract_csr_name(instruction);
-        let operands = parse_instruction_operands(instruction);
         let placeholders = extract_placeholders(instruction);
         
         InstructionInfo {
             instruction: instruction.to_string(),
-            operands,
             placeholders,
             csr_name,
             is_csr,
@@ -318,30 +300,10 @@ fn parse_instructions(assembly_template: &str) -> Vec<InstructionInfo> {
     }).collect()
 }
 
-fn build_operand_map(operands: &[AsmOperand]) -> HashMap<String, usize> {
-    let mut map = HashMap::new();
-    
-    for (index, operand) in operands.iter().enumerate() {
-        match operand {
-            AsmOperand::Input { name: Some(name), .. } |
-            AsmOperand::Output { name: Some(name), .. } |
-            AsmOperand::InOut { name: Some(name), .. } => {
-                map.insert(name.to_string(), index);
-            }
-            _ => {
-                // For positional operands, we'll handle them differently
-                // This is a simplified approach for now
-            }
-        }
-    }
-    
-    map
-}
 
 fn build_operand_register_map(
     instructions: &[InstructionInfo],
     operands: &[AsmOperand],
-    operand_map: &HashMap<String, usize>,
 ) -> (Vec<RegAllocation>, Vec<InstructionOperandMapping>) {
     let mut register_allocation = Vec::new();
     let mut instruction_mappings = Vec::new();
@@ -361,7 +323,6 @@ fn build_operand_register_map(
                     register,
                     is_input: true,
                     is_output: false,
-                    used_in_instructions: vec![],
                 });
                 reg_counter += 1;
             }
@@ -373,7 +334,6 @@ fn build_operand_register_map(
                     register,
                     is_input: false,
                     is_output: true,
-                    used_in_instructions: vec![],
                 });
                 reg_counter += 1;
             }
@@ -385,7 +345,6 @@ fn build_operand_register_map(
                     register,
                     is_input: true,
                     is_output: true,
-                    used_in_instructions: vec![],
                 });
                 reg_counter += 1;
             }
@@ -394,7 +353,7 @@ fn build_operand_register_map(
     }
     
     // Second pass: create instruction mappings
-    for (instr_index, instruction) in instructions.iter().enumerate() {
+    for instruction in instructions.iter() {
         let mut operand_registers = HashMap::new();
         
         // Map each placeholder to its register
@@ -408,8 +367,6 @@ fn build_operand_register_map(
         }
         
         instruction_mappings.push(InstructionOperandMapping {
-            instruction_index: instr_index,
-            placeholders: instruction.placeholders.clone(),
             operand_registers,
         });
     }
@@ -419,19 +376,16 @@ fn build_operand_register_map(
 
 fn analyze_multi_instructions(assembly_template: &str, operands: &[AsmOperand]) -> MultiInstructionAnalysis {
     let instructions = parse_instructions(assembly_template);
-    let operand_map = build_operand_map(operands);
     let has_csr_operations = instructions.iter().any(|instr| instr.is_csr);
     
     // Build proper operand-to-register mapping
     let (register_allocation, instruction_mappings) = build_operand_register_map(
         &instructions,
         operands,
-        &operand_map,
     );
     
     MultiInstructionAnalysis {
         instructions,
-        operand_map,
         register_allocation,
         instruction_mappings,
         has_csr_operations,
