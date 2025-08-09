@@ -31,6 +31,7 @@ enum AsmOperand {
 struct AsmInput {
     template: LitStr,
     operands: Vec<AsmOperand>,
+    options: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -39,6 +40,7 @@ struct InstructionInfo {
     placeholders: Vec<String>, // ["{prev}", "{x}"]
     csr_name: Option<String>,  // Some("mscratch")
     is_csr: bool,              // true
+    is_load: bool,             // true
 }
 
 #[derive(Debug, Clone)]
@@ -60,6 +62,7 @@ struct MultiInstructionAnalysis {
     register_allocation: Vec<RegAllocation>,
     instruction_mappings: Vec<InstructionOperandMapping>,
     has_csr_operations: bool,
+    has_memory_operations: bool,
 }
 
 impl Parse for AsmOperand {
@@ -188,16 +191,29 @@ impl Parse for AsmInput {
         let template = input.parse::<LitStr>()?;
 
         let mut operands = Vec::new();
+        let mut options = Vec::new();
 
         while !input.is_empty() {
             input.parse::<Token![,]>()?;
             if input.is_empty() {
                 break;
             }
-            operands.push(input.parse()?);
+            let operand = input.parse::<AsmOperand>()?;
+            if let AsmOperand::Options(expr) = &operand {
+                if let Expr::Tuple(tuple) = expr {
+                    for elem in &tuple.elems {
+                        if let Expr::Path(path) = elem {
+                            if let Some(ident) = path.path.get_ident() {
+                                options.push(ident.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            operands.push(operand);
         }
 
-        Ok(AsmInput { template, operands })
+        Ok(AsmInput { template, operands, options })
     }
 }
 
@@ -208,7 +224,7 @@ fn validate_risc_v_instruction(instruction: &str) -> Vec<String> {
     let common_instructions = [
         "add", "sub", "mul", "div", "rem", "addi", "subi", "andi", "ori", "xori", "sll", "srl",
         "sra", "slli", "srli", "srai", "lw", "sw", "lb", "sb", "lh", "sh", "beq", "bne", "blt",
-        "bge", "bltu", "bgeu", "jal", "jalr", "lui", "auipc", "li", "mv", "nop",
+        "bge", "bltu", "bgeu", "jal", "jalr", "lui", "auipc", "li", "mv", "nop", "ld",
         // CSR instructions
         "csrr", "csrw", "csrs", "csrc", "csrri", "csrwi", "csrsi", "csrci", "csrrw", "csrrs",
         "csrrc", "csrrwi", "csrrsi", "csrrci",
@@ -254,6 +270,17 @@ fn is_csr_instruction(instruction: &str) -> bool {
     let parts: Vec<&str> = instruction.split_whitespace().collect();
     if let Some(op) = parts.first() {
         csr_instructions.contains(op)
+    } else {
+        false
+    }
+}
+
+fn is_load_instruction(instruction: &str) -> bool {
+    let load_instructions = ["lw", "ld", "lh", "lb"];
+
+    let parts: Vec<&str> = instruction.split_whitespace().collect();
+    if let Some(op) = parts.first() {
+        load_instructions.contains(op)
     } else {
         false
     }
@@ -331,6 +358,7 @@ fn parse_instructions(assembly_template: &str) -> Vec<InstructionInfo> {
         .iter()
         .map(|instruction| {
             let is_csr = is_csr_instruction(instruction);
+            let is_load = is_load_instruction(instruction);
             let csr_name = extract_csr_name(instruction);
             let placeholders = extract_placeholders(instruction);
 
@@ -339,6 +367,7 @@ fn parse_instructions(assembly_template: &str) -> Vec<InstructionInfo> {
                 placeholders,
                 csr_name,
                 is_csr,
+                is_load,
             }
         })
         .collect()
@@ -427,6 +456,7 @@ fn analyze_multi_instructions(
 ) -> MultiInstructionAnalysis {
     let instructions = parse_instructions(assembly_template);
     let has_csr_operations = instructions.iter().any(|instr| instr.is_csr);
+    let has_memory_operations = instructions.iter().any(|instr| instr.is_load);
 
     // Build proper operand-to-register mapping
     let (register_allocation, instruction_mappings) =
@@ -437,12 +467,14 @@ fn analyze_multi_instructions(
         register_allocation,
         instruction_mappings,
         has_csr_operations,
+        has_memory_operations,
     }
 }
 
 fn generate_softcore_code(
     analysis: &MultiInstructionAnalysis,
     operands: &[AsmOperand],
+    options: &[String],
 ) -> proc_macro2::TokenStream {
     let mut setup_code = Vec::new();
     let mut instruction_code = Vec::new();
@@ -550,6 +582,36 @@ fn generate_softcore_code(
                             // Unknown CSR instruction format
                             continue;
                         }
+                    }
+                }
+            }
+        } else if instr.is_load && !options.contains(&"nomem".to_string()) {
+            if let Some(mapping) = analysis.instruction_mappings.get(instr_index) {
+                let parts: Vec<&str> = instr.instruction.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    let dest_operand = parts[1].trim_end_matches(',');
+                    let src_operand = parts[2].trim_end_matches(',');
+
+                    let dest_reg = if dest_operand.starts_with('{') && dest_operand.ends_with('}') {
+                        mapping.operand_registers.get(dest_operand)
+                    } else {
+                        None
+                    };
+
+                    let src_reg = if src_operand.starts_with('{') && src_operand.ends_with('}') {
+                        mapping.operand_registers.get(src_operand)
+                    } else {
+                        None
+                    };
+
+                    if let (Some(dest_reg), Some(src_reg)) = (dest_reg, src_reg) {
+                        let dest_reg_name = syn::parse_str::<syn::Ident>(dest_reg).unwrap();
+                        let src_reg_name = syn::parse_str::<syn::Ident>(src_reg).unwrap();
+                        instruction_code.push(quote! {
+                            let fresh1 = core.get(reg::#src_reg_name) as *const u64;
+                            let fresh2: u64 = unsafe { *fresh1 };
+                            core.set(reg::#dest_reg_name, fresh2);
+                        });
                     }
                 }
             }
@@ -688,8 +750,8 @@ pub fn rasm(input: TokenStream) -> TokenStream {
     eprintln!("{:#?}", analysis);
 
     // Generate conditional output based on target architecture and CSR operations
-    let output = if analysis.has_csr_operations {
-        let softcore_code = generate_softcore_code(&analysis, &asm_input.operands);
+    let output = if analysis.has_csr_operations || analysis.has_memory_operations {
+        let softcore_code = generate_softcore_code(&analysis, &asm_input.operands, &asm_input.options);
         quote! {
             {
                 #[cfg(target_arch = "riscv64")]
