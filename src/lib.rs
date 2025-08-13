@@ -41,6 +41,7 @@ struct InstructionInfo {
     csr_name: Option<String>,  // Some("mscratch")
     is_csr: bool,              // true
     is_load: bool,             // true
+    is_store: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -224,7 +225,7 @@ fn validate_risc_v_instruction(instruction: &str) -> Vec<String> {
     let common_instructions = [
         "add", "sub", "mul", "div", "rem", "addi", "subi", "andi", "ori", "xori", "sll", "srl",
         "sra", "slli", "srli", "srai", "lw", "sw", "lb", "sb", "lh", "sh", "beq", "bne", "blt",
-        "bge", "bltu", "bgeu", "jal", "jalr", "lui", "auipc", "li", "mv", "nop", "ld",
+        "bge", "bltu", "bgeu", "jal", "jalr", "lui", "auipc", "li", "mv", "nop", "ld", "sd",
         // CSR instructions
         "csrr", "csrw", "csrs", "csrc", "csrri", "csrwi", "csrsi", "csrci", "csrrw", "csrrs",
         "csrrc", "csrrwi", "csrrsi", "csrrci",
@@ -281,6 +282,17 @@ fn is_load_instruction(instruction: &str) -> bool {
     let parts: Vec<&str> = instruction.split_whitespace().collect();
     if let Some(op) = parts.first() {
         load_instructions.contains(op)
+    } else {
+        false
+    }
+}
+
+fn is_store_instruction(instruction: &str) -> bool {
+    let store_instructions = ["sw", "sd", "sh", "sb"];
+
+    let parts: Vec<&str> = instruction.split_whitespace().collect();
+    if let Some(op) = parts.first() {
+        store_instructions.contains(op)
     } else {
         false
     }
@@ -359,6 +371,7 @@ fn parse_instructions(assembly_template: &str) -> Vec<InstructionInfo> {
         .map(|instruction| {
             let is_csr = is_csr_instruction(instruction);
             let is_load = is_load_instruction(instruction);
+            let is_store = is_store_instruction(instruction);
             let csr_name = extract_csr_name(instruction);
             let placeholders = extract_placeholders(instruction);
 
@@ -368,6 +381,7 @@ fn parse_instructions(assembly_template: &str) -> Vec<InstructionInfo> {
                 csr_name,
                 is_csr,
                 is_load,
+                is_store,
             }
         })
         .collect()
@@ -456,7 +470,7 @@ fn analyze_multi_instructions(
 ) -> MultiInstructionAnalysis {
     let instructions = parse_instructions(assembly_template);
     let has_csr_operations = instructions.iter().any(|instr| instr.is_csr);
-    let has_memory_operations = instructions.iter().any(|instr| instr.is_load);
+    let has_memory_operations = instructions.iter().any(|instr| instr.is_load || instr.is_store);
 
     // Build proper operand-to-register mapping
     let (register_allocation, instruction_mappings) =
@@ -590,7 +604,7 @@ fn generate_softcore_code(
                 let parts: Vec<&str> = instr.instruction.split_whitespace().collect();
                 if parts.len() >= 2 {
                     let dest_operand = parts[1].trim_end_matches(',');
-                    let src_operand = parts[2].trim_end_matches(',');
+                    let mem_operand = parts[2].trim_end_matches(',');
 
                     let dest_reg = if dest_operand.starts_with('{') && dest_operand.ends_with('}') {
                         mapping.operand_registers.get(dest_operand)
@@ -598,8 +612,11 @@ fn generate_softcore_code(
                         None
                     };
 
-                    let src_reg = if src_operand.starts_with('{') && src_operand.ends_with('}') {
-                        mapping.operand_registers.get(src_operand)
+                    let src_reg = if mem_operand.contains("{") && mem_operand.contains("}") {
+                        let start = mem_operand.find('{').unwrap();
+                        let end = mem_operand.find('}').unwrap();
+                        let placeholder = &mem_operand[start..=end];
+                        mapping.operand_registers.get(placeholder)
                     } else {
                         None
                     };
@@ -611,6 +628,39 @@ fn generate_softcore_code(
                             let fresh1 = core.get(reg::#src_reg_name) as *const u64;
                             let fresh2: u64 = unsafe { *fresh1 };
                             core.set(reg::#dest_reg_name, fresh2);
+                        });
+                    }
+                }
+            }
+        } else if instr.is_store && !options.contains(&"nomem".to_string()) {
+            if let Some(mapping) = analysis.instruction_mappings.get(instr_index) {
+                let parts: Vec<&str> = instr.instruction.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    let src_operand = parts[1].trim_end_matches(',');
+                    let mem_operand = parts[2].trim_end_matches(',');
+
+                    let src_reg = if src_operand.starts_with('{') && src_operand.ends_with('}') {
+                        mapping.operand_registers.get(src_operand)
+                    } else {
+                        None
+                    };
+
+                    let dest_reg = if mem_operand.contains("{") && mem_operand.contains("}") {
+                        let start = mem_operand.find('{').unwrap();
+                        let end = mem_operand.find('}').unwrap();
+                        let placeholder = &mem_operand[start..=end];
+                        mapping.operand_registers.get(placeholder)
+                    } else {
+                        None
+                    };
+
+                    if let (Some(dest_reg), Some(src_reg)) = (dest_reg, src_reg) {
+                        let dest_reg_name = syn::parse_str::<syn::Ident>(dest_reg).unwrap();
+                        let src_reg_name = syn::parse_str::<syn::Ident>(src_reg).unwrap();
+                        instruction_code.push(quote! {
+                            let fresh1 = core.get(reg::#dest_reg_name) as *mut u64;
+                            let fresh2 = core.get(reg::#src_reg_name);
+                            unsafe { *fresh1 = fresh2 };
                         });
                     }
                 }
