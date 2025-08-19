@@ -46,3 +46,7 @@ path = "examples/test_mixed_syntax.rs"
 [[example]]
 name = "test_multi_csr"
 path = "examples/test_multi_csr.rs"
+
+[[example]]
+name = "test_memory"
+path = "examples/test_memory.rs"
