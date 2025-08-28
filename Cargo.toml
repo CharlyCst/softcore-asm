@@ -12,9 +12,6 @@ quote = "1.0"
 proc-macro2 = "1.0"
 softcore-rv64 = "0.4.0"
 
-[features]
-softcore = []
-
 [[example]]
 name = "test_rasm"
 path = "examples/test_rasm.rs"

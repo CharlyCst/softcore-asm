@@ -37,25 +37,24 @@ fn main() {
     let mut prev_value: u64 = 0;
     let mut final_value: u64 = 0;
 
-    {
-    #[cfg(target_arch = "riscv64")]
-    unsafe {
-        core::arch::asm!("csrrw {prev}, mscratch, {x}
-        csrrw {final_val}, mscratch, x0",x = in(reg)value,prev = out(reg)prev_value,final_val = out(reg)final_value,options(nomem))
-    }#[cfg(feature = "softcore")]
-    {
-        SOFT_CORE.with_borrow_mut(|core|{
-            core.set(reg::X1,value);
-            core.csrrw(reg::X2,csr_name_map_backwards("mscratch").bits(),reg::X1).unwrap();
-            core.csrrw(reg::X3,csr_name_map_backwards("mscratch").bits(),reg::X0).unwrap();
-            prev_value = core.get(reg::X2);
-            final_value = core.get(reg::X3);
-        })
-    }
-};
+    rasm!(
+        "csrrw {prev}, mscratch, {x}
+        csrrw {final_val}, mscratch, x0",
+        x = in(reg) value,
+        prev = out(reg) prev_value,
+        final_val = out(reg) final_value,
+        options(nomem)
+    );
 
     assert_eq!(final_value, value);
 
     let mscratch_val = 0x1234;
     rasm!("csrw mscratch, {cfg}", cfg = in(reg) mscratch_val, options(nomem));
+    SOFT_CORE.with_borrow_mut(|core| {
+        assert_eq!(
+            core.mscratch.bits(),
+            mscratch_val,
+            "Failed to write mscratch"
+        );
+    })
 }
