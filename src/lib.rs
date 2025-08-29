@@ -1,38 +1,11 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use std::collections::HashMap;
-use syn::{
-    Expr, Ident, LitStr, Token,
-    parse::{Parse, ParseStream, Result},
-    parse_macro_input,
-};
+use syn::parse_macro_input;
 
-#[derive(Clone)]
-enum AsmOperand {
-    Input {
-        name: Option<Ident>,
-        reg: Ident,
-        expr: Expr,
-    },
-    Output {
-        name: Option<Ident>,
-        reg: Ident,
-        expr: Expr,
-    },
-    InOut {
-        name: Option<Ident>,
-        reg: Ident,
-        expr: Expr,
-    },
-    Options(Expr),
-    Raw(Expr),
-}
+mod parser;
 
-struct AsmInput {
-    template: LitStr,
-    operands: Vec<AsmOperand>,
-    options: Vec<String>,
-}
+use parser::{AsmInput, AsmOperand};
 
 #[derive(Debug, Clone)]
 struct InstructionInfo {
@@ -64,162 +37,6 @@ struct MultiInstructionAnalysis {
     instruction_mappings: Vec<InstructionOperandMapping>,
 }
 
-impl Parse for AsmOperand {
-    fn parse(input: ParseStream) -> Result<Self> {
-        // Check for named operand: "name = direction(reg) expr"
-        if input.peek(Ident) && input.peek2(Token![=]) {
-            let name = input.parse::<Ident>()?;
-            input.parse::<Token![=]>()?;
-
-            // Now parse the direction(reg) expr part
-            if input.peek(Token![in]) {
-                input.parse::<Token![in]>()?;
-                let content;
-                syn::parenthesized!(content in input);
-                let reg = content.parse::<Ident>()?;
-                let expr = input.parse::<Expr>()?;
-                Ok(AsmOperand::Input {
-                    name: Some(name),
-                    reg,
-                    expr,
-                })
-            } else if input.peek(Ident) && input.peek2(syn::token::Paren) {
-                let ident = input.parse::<Ident>()?;
-                match ident.to_string().as_str() {
-                    "out" => {
-                        let content;
-                        syn::parenthesized!(content in input);
-                        let reg = content.parse::<Ident>()?;
-                        let expr = input.parse::<Expr>()?;
-                        Ok(AsmOperand::Output {
-                            name: Some(name),
-                            reg,
-                            expr,
-                        })
-                    }
-                    "inout" => {
-                        let content;
-                        syn::parenthesized!(content in input);
-                        let reg = content.parse::<Ident>()?;
-                        let expr = input.parse::<Expr>()?;
-                        Ok(AsmOperand::InOut {
-                            name: Some(name),
-                            reg,
-                            expr,
-                        })
-                    }
-                    _ => {
-                        return Err(input.error("Expected operand specification after name ="));
-                    }
-                }
-            } else {
-                return Err(input.error("Expected direction specification after name ="));
-            }
-        }
-        // Check for options(...)
-        else if input.peek(Ident) {
-            let ident = input.fork().parse::<Ident>()?;
-            if ident == "options" && input.peek2(syn::token::Paren) {
-                input.parse::<Ident>()?; // consume "options"
-                let content;
-                syn::parenthesized!(content in input);
-                // Parse the entire content as a single expression (handles comma-separated values)
-                let remaining_tokens = content.parse::<proc_macro2::TokenStream>()?;
-                let expr: Expr = syn::parse2(quote! { (#remaining_tokens) })?;
-                Ok(AsmOperand::Options(expr))
-            } else if input.peek2(syn::token::Paren) {
-                // Handle non-named operand specifications (out/inout)
-                let ident = input.parse::<Ident>()?;
-                match ident.to_string().as_str() {
-                    "out" => {
-                        let content;
-                        syn::parenthesized!(content in input);
-                        let reg = content.parse::<Ident>()?;
-                        let expr = input.parse::<Expr>()?;
-                        Ok(AsmOperand::Output {
-                            name: None,
-                            reg,
-                            expr,
-                        })
-                    }
-                    "inout" => {
-                        let content;
-                        syn::parenthesized!(content in input);
-                        let reg = content.parse::<Ident>()?;
-                        let expr = input.parse::<Expr>()?;
-                        Ok(AsmOperand::InOut {
-                            name: None,
-                            reg,
-                            expr,
-                        })
-                    }
-                    _ => {
-                        // Parse as raw expression
-                        let expr = input.parse::<Expr>()?;
-                        Ok(AsmOperand::Raw(expr))
-                    }
-                }
-            } else {
-                // Parse as raw expression
-                let expr = input.parse::<Expr>()?;
-                Ok(AsmOperand::Raw(expr))
-            }
-        }
-        // Try to parse 'in' keyword specifically (since 'in' is a keyword in Rust)
-        else if input.peek(Token![in]) {
-            input.parse::<Token![in]>()?;
-            let content;
-            syn::parenthesized!(content in input);
-            let reg = content.parse::<Ident>()?;
-            let expr = input.parse::<Expr>()?;
-            Ok(AsmOperand::Input {
-                name: None,
-                reg,
-                expr,
-            })
-        } else {
-            // Parse as raw expression
-            let expr = input.parse::<Expr>()?;
-            Ok(AsmOperand::Raw(expr))
-        }
-    }
-}
-
-impl Parse for AsmInput {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let template = input.parse::<LitStr>()?;
-
-        let mut operands = Vec::new();
-        let mut options = Vec::new();
-
-        while !input.is_empty() {
-            input.parse::<Token![,]>()?;
-            if input.is_empty() {
-                break;
-            }
-            let operand = input.parse::<AsmOperand>()?;
-            if let AsmOperand::Options(expr) = &operand {
-                if let Expr::Tuple(tuple) = expr {
-                    for elem in &tuple.elems {
-                        if let Expr::Path(path) = elem {
-                            if let Some(ident) = path.path.get_ident() {
-                                options.push(ident.to_string());
-                            }
-                        }
-                    }
-                }
-            }
-            operands.push(operand);
-        }
-
-        Ok(AsmInput {
-            template,
-            operands,
-            options,
-        })
-    }
-}
-
 fn validate_risc_v_instruction(instruction: &str) -> Vec<String> {
     let mut warnings = Vec::new();
 
@@ -235,10 +52,10 @@ fn validate_risc_v_instruction(instruction: &str) -> Vec<String> {
 
     // Split instruction into parts
     let parts: Vec<&str> = instruction.split_whitespace().collect();
-    if let Some(op) = parts.first() {
-        if !common_instructions.contains(op) {
-            warnings.push(format!("Unknown RISC-V instruction: {}", op));
-        }
+    if let Some(op) = parts.first()
+        && !common_instructions.contains(op)
+    {
+        warnings.push(format!("Unknown RISC-V instruction: {}", op));
     }
 
     warnings
@@ -502,17 +319,17 @@ fn generate_softcore_code(
 
     // Generate setup code for input registers
     for reg_alloc in &analysis.register_allocation {
-        if reg_alloc.is_input {
-            if let Some(operand) = operands.get(reg_alloc.operand_index) {
-                let reg_name = syn::parse_str::<syn::Ident>(&reg_alloc.register).unwrap();
-                match operand {
-                    AsmOperand::Input { expr, .. } | AsmOperand::InOut { expr, .. } => {
-                        setup_code.push(quote! {
-                            core.set(reg::#reg_name, #expr);
-                        });
-                    }
-                    _ => {}
+        if reg_alloc.is_input
+            && let Some(operand) = operands.get(reg_alloc.operand_index)
+        {
+            let reg_name = syn::parse_str::<syn::Ident>(&reg_alloc.register).unwrap();
+            match operand {
+                AsmOperand::Input { expr, .. } | AsmOperand::InOut { expr, .. } => {
+                    setup_code.push(quote! {
+                        core.set(reg::#reg_name, #expr);
+                    });
                 }
+                _ => {}
             }
         }
     }
@@ -660,37 +477,38 @@ fn generate_softcore_code(
                     }
                 }
             }
-        } else if instr.is_store && !options.contains(&"nomem".to_string()) {
-            if let Some(mapping) = analysis.instruction_mappings.get(instr_index) {
-                let parts: Vec<&str> = instr.instruction.split_whitespace().collect();
-                if parts.len() >= 2 {
-                    let src_operand = parts[1].trim_end_matches(',');
-                    let mem_operand = parts[2].trim_end_matches(',');
+        } else if instr.is_store
+            && !options.contains(&"nomem".to_string())
+            && let Some(mapping) = analysis.instruction_mappings.get(instr_index)
+        {
+            let parts: Vec<&str> = instr.instruction.split_whitespace().collect();
+            if parts.len() >= 2 {
+                let src_operand = parts[1].trim_end_matches(',');
+                let mem_operand = parts[2].trim_end_matches(',');
 
-                    let src_reg = if src_operand.starts_with('{') && src_operand.ends_with('}') {
-                        mapping.operand_registers.get(src_operand)
-                    } else {
-                        None
-                    };
+                let src_reg = if src_operand.starts_with('{') && src_operand.ends_with('}') {
+                    mapping.operand_registers.get(src_operand)
+                } else {
+                    None
+                };
 
-                    let dest_reg = if mem_operand.contains("{") && mem_operand.contains("}") {
-                        let start = mem_operand.find('{').unwrap();
-                        let end = mem_operand.find('}').unwrap();
-                        let placeholder = &mem_operand[start..=end];
-                        mapping.operand_registers.get(placeholder)
-                    } else {
-                        None
-                    };
+                let dest_reg = if mem_operand.contains("{") && mem_operand.contains("}") {
+                    let start = mem_operand.find('{').unwrap();
+                    let end = mem_operand.find('}').unwrap();
+                    let placeholder = &mem_operand[start..=end];
+                    mapping.operand_registers.get(placeholder)
+                } else {
+                    None
+                };
 
-                    if let (Some(dest_reg), Some(src_reg)) = (dest_reg, src_reg) {
-                        let dest_reg_name = syn::parse_str::<syn::Ident>(dest_reg).unwrap();
-                        let src_reg_name = syn::parse_str::<syn::Ident>(src_reg).unwrap();
-                        instruction_code.push(quote! {
-                            let fresh1 = core.get(reg::#dest_reg_name) as *mut u64;
-                            let fresh2 = core.get(reg::#src_reg_name);
-                            unsafe { *fresh1 = fresh2 };
-                        });
-                    }
+                if let (Some(dest_reg), Some(src_reg)) = (dest_reg, src_reg) {
+                    let dest_reg_name = syn::parse_str::<syn::Ident>(dest_reg).unwrap();
+                    let src_reg_name = syn::parse_str::<syn::Ident>(src_reg).unwrap();
+                    instruction_code.push(quote! {
+                        let fresh1 = core.get(reg::#dest_reg_name) as *mut u64;
+                        let fresh2 = core.get(reg::#src_reg_name);
+                        unsafe { *fresh1 = fresh2 };
+                    });
                 }
             }
         }
@@ -698,17 +516,17 @@ fn generate_softcore_code(
 
     // Generate extraction code for output registers
     for reg_alloc in &analysis.register_allocation {
-        if reg_alloc.is_output {
-            if let Some(operand) = operands.get(reg_alloc.operand_index) {
-                let reg_name = syn::parse_str::<syn::Ident>(&reg_alloc.register).unwrap();
-                match operand {
-                    AsmOperand::Output { expr, .. } | AsmOperand::InOut { expr, .. } => {
-                        extract_code.push(quote! {
-                            #expr = core.get(reg::#reg_name);
-                        });
-                    }
-                    _ => {}
+        if reg_alloc.is_output
+            && let Some(operand) = operands.get(reg_alloc.operand_index)
+        {
+            let reg_name = syn::parse_str::<syn::Ident>(&reg_alloc.register).unwrap();
+            match operand {
+                AsmOperand::Output { expr, .. } | AsmOperand::InOut { expr, .. } => {
+                    extract_code.push(quote! {
+                        #expr = core.get(reg::#reg_name);
+                    });
                 }
+                _ => {}
             }
         }
     }
