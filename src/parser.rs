@@ -4,26 +4,7 @@ use syn::{
     parse::{Parse, ParseStream, Result},
 };
 
-#[derive(Clone)]
-pub enum AsmOperand {
-    Input {
-        name: Option<Ident>,
-        reg: Ident,
-        expr: Expr,
-    },
-    Output {
-        name: Option<Ident>,
-        reg: Ident,
-        expr: Expr,
-    },
-    InOut {
-        name: Option<Ident>,
-        reg: Ident,
-        expr: Expr,
-    },
-    Options(Expr),
-    Raw(Expr),
-}
+// ———————————————————————— Macro Syntax Definition ————————————————————————— //
 
 pub struct AsmInput {
     pub template: LitStr,
@@ -31,121 +12,88 @@ pub struct AsmInput {
     pub options: Vec<String>,
 }
 
+#[derive(Clone)]
+pub enum AsmOperand {
+    Register(RegisterOperand),
+    Options(Expr),
+}
+
+#[derive(Clone)]
+pub struct RegisterOperand {
+    pub ident: Option<Ident>,
+    pub reg: Ident,
+    pub expr: Expr,
+    pub is_input: bool,
+    pub is_output: bool,
+}
+
+// —————————————————————————————— Macro Parser —————————————————————————————— //
+
+impl Parse for RegisterOperand {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let ident;
+        let is_input;
+        let is_output;
+
+        // Check if this operand is given an identifier:
+        // ident = in(reg) expr
+        if input.peek(Ident) && input.peek2(Token![=]) {
+            ident = Some(input.parse::<Ident>()?);
+            input.parse::<Token![=]>()?;
+        } else {
+            ident = None;
+        }
+
+        // Now parse the `[in|out|inout](reg)` part
+        if input.peek(Token![in]) {
+            input.parse::<Token![in]>()?;
+            is_input = true;
+            is_output = false;
+        } else if input.peek(Ident) && input.peek2(syn::token::Paren) {
+            let ident = input.parse::<Ident>()?;
+            match ident.to_string().as_str() {
+                "out" => {
+                    is_input = false;
+                    is_output = true;
+                }
+                "inout" => {
+                    is_input = true;
+                    is_output = true;
+                }
+                _ => return Err(input.error("Expected operand specification after name =")),
+            }
+        } else {
+            return Err(input.error("Expected direction specification after name ="));
+        };
+
+        // And finally parse the target register and expression
+        let content;
+        syn::parenthesized!(content in input);
+        let reg = content.parse::<Ident>()?;
+        let expr = input.parse::<Expr>()?;
+
+        Ok(RegisterOperand {
+            ident,
+            reg,
+            expr,
+            is_input,
+            is_output,
+        })
+    }
+}
+
 impl Parse for AsmOperand {
     fn parse(input: ParseStream) -> Result<Self> {
-        // Check for named operand: "name = direction(reg) expr"
-        if input.peek(Ident) && input.peek2(Token![=]) {
-            let name = input.parse::<Ident>()?;
-            input.parse::<Token![=]>()?;
-
-            // Now parse the direction(reg) expr part
-            if input.peek(Token![in]) {
-                input.parse::<Token![in]>()?;
-                let content;
-                syn::parenthesized!(content in input);
-                let reg = content.parse::<Ident>()?;
-                let expr = input.parse::<Expr>()?;
-                Ok(AsmOperand::Input {
-                    name: Some(name),
-                    reg,
-                    expr,
-                })
-            } else if input.peek(Ident) && input.peek2(syn::token::Paren) {
-                let ident = input.parse::<Ident>()?;
-                match ident.to_string().as_str() {
-                    "out" => {
-                        let content;
-                        syn::parenthesized!(content in input);
-                        let reg = content.parse::<Ident>()?;
-                        let expr = input.parse::<Expr>()?;
-                        Ok(AsmOperand::Output {
-                            name: Some(name),
-                            reg,
-                            expr,
-                        })
-                    }
-                    "inout" => {
-                        let content;
-                        syn::parenthesized!(content in input);
-                        let reg = content.parse::<Ident>()?;
-                        let expr = input.parse::<Expr>()?;
-                        Ok(AsmOperand::InOut {
-                            name: Some(name),
-                            reg,
-                            expr,
-                        })
-                    }
-                    _ => Err(input.error("Expected operand specification after name =")),
-                }
-            } else {
-                Err(input.error("Expected direction specification after name ="))
-            }
-        }
-        // Check for options(...)
-        else if input.peek(Ident) {
-            let ident = input.fork().parse::<Ident>()?;
-            if ident == "options" && input.peek2(syn::token::Paren) {
-                input.parse::<Ident>()?; // consume "options"
-                let content;
-                syn::parenthesized!(content in input);
-                // Parse the entire content as a single expression (handles comma-separated values)
-                let remaining_tokens = content.parse::<proc_macro2::TokenStream>()?;
-                let expr: Expr = syn::parse2(quote! { (#remaining_tokens) })?;
-                Ok(AsmOperand::Options(expr))
-            } else if input.peek2(syn::token::Paren) {
-                // Handle non-named operand specifications (out/inout)
-                let ident = input.parse::<Ident>()?;
-                match ident.to_string().as_str() {
-                    "out" => {
-                        let content;
-                        syn::parenthesized!(content in input);
-                        let reg = content.parse::<Ident>()?;
-                        let expr = input.parse::<Expr>()?;
-                        Ok(AsmOperand::Output {
-                            name: None,
-                            reg,
-                            expr,
-                        })
-                    }
-                    "inout" => {
-                        let content;
-                        syn::parenthesized!(content in input);
-                        let reg = content.parse::<Ident>()?;
-                        let expr = input.parse::<Expr>()?;
-                        Ok(AsmOperand::InOut {
-                            name: None,
-                            reg,
-                            expr,
-                        })
-                    }
-                    _ => {
-                        // Parse as raw expression
-                        let expr = input.parse::<Expr>()?;
-                        Ok(AsmOperand::Raw(expr))
-                    }
-                }
-            } else {
-                // Parse as raw expression
-                let expr = input.parse::<Expr>()?;
-                Ok(AsmOperand::Raw(expr))
-            }
-        }
-        // Try to parse 'in' keyword specifically (since 'in' is a keyword in Rust)
-        else if input.peek(Token![in]) {
-            input.parse::<Token![in]>()?;
+        if input.peek(Ident) && input.fork().parse::<Ident>().unwrap() == "options" {
+            input.parse::<Ident>()?; // consume "options"
             let content;
             syn::parenthesized!(content in input);
-            let reg = content.parse::<Ident>()?;
-            let expr = input.parse::<Expr>()?;
-            Ok(AsmOperand::Input {
-                name: None,
-                reg,
-                expr,
-            })
+            // Parse the entire content as a single expression (handles comma-separated,values)
+            let remaining_tokens = content.parse::<proc_macro2::TokenStream>()?;
+            let expr: Expr = syn::parse2(quote! { (#remaining_tokens) })?;
+            Ok(AsmOperand::Options(expr))
         } else {
-            // Parse as raw expression
-            let expr = input.parse::<Expr>()?;
-            Ok(AsmOperand::Raw(expr))
+            Ok(AsmOperand::Register(input.parse::<RegisterOperand>()?))
         }
     }
 }
@@ -163,9 +111,7 @@ impl Parse for AsmInput {
                 break;
             }
             let operand = input.parse::<AsmOperand>()?;
-            if let AsmOperand::Options(expr) = &operand
-                && let Expr::Tuple(tuple) = expr
-            {
+            if let AsmOperand::Options(Expr::Tuple(tuple)) = &operand {
                 for elem in &tuple.elems {
                     if let Expr::Path(path) = elem
                         && let Some(ident) = path.path.get_ident()
@@ -182,5 +128,17 @@ impl Parse for AsmInput {
             operands,
             options,
         })
+    }
+}
+
+// ————————————————————————————————— Tests —————————————————————————————————— //
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn register_operand() {
+        todo!()
     }
 }
