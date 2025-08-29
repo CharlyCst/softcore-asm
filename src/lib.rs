@@ -3,6 +3,7 @@ use quote::quote;
 use std::collections::HashMap;
 use syn::parse_macro_input;
 
+mod display;
 mod parser;
 
 use parser::{AsmInput, AsmOperand};
@@ -56,26 +57,6 @@ fn validate_risc_v_instruction(instruction: &str) -> Vec<String> {
         && !common_instructions.contains(op)
     {
         warnings.push(format!("Unknown RISC-V instruction: {}", op));
-    }
-
-    warnings
-}
-
-fn validate_risc_v_register(reg: &str) -> Vec<String> {
-    let mut warnings = Vec::new();
-
-    // Check for valid RISC-V register names
-    let valid_regs = [
-        "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13",
-        "x14", "x15", "x16", "x17", "x18", "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26",
-        "x27", "x28", "x29", "x30", "x31", "zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2", "s0",
-        "s1", "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7",
-        "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6",
-        "reg", // Generic register placeholder
-    ];
-
-    if !valid_regs.contains(&reg) {
-        warnings.push(format!("Unknown RISC-V register: {}", reg));
     }
 
     warnings
@@ -558,84 +539,8 @@ pub fn rasm(input: TokenStream) -> TokenStream {
 
     // Print operands information
     eprintln!("RASM: Found {} operands", asm_input.operands.len());
-    for (i, operand) in asm_input.operands.iter().enumerate() {
-        match operand {
-            AsmOperand::Input { name, reg, expr } => {
-                if let Some(name) = name {
-                    eprintln!(
-                        "RASM: Operand {}: Named Input {}={} reg={}, expr={}",
-                        i,
-                        name,
-                        reg,
-                        reg,
-                        quote!(#expr)
-                    );
-                } else {
-                    eprintln!(
-                        "RASM: Operand {}: Input reg={}, expr={}",
-                        i,
-                        reg,
-                        quote!(#expr)
-                    );
-                }
-                let reg_warnings = validate_risc_v_register(&reg.to_string());
-                for warning in reg_warnings {
-                    eprintln!("RASM WARNING: {}", warning);
-                }
-            }
-            AsmOperand::Output { name, reg, expr } => {
-                if let Some(name) = name {
-                    eprintln!(
-                        "RASM: Operand {}: Named Output {}={} reg={}, expr={}",
-                        i,
-                        name,
-                        reg,
-                        reg,
-                        quote!(#expr)
-                    );
-                } else {
-                    eprintln!(
-                        "RASM: Operand {}: Output reg={}, expr={}",
-                        i,
-                        reg,
-                        quote!(#expr)
-                    );
-                }
-                let reg_warnings = validate_risc_v_register(&reg.to_string());
-                for warning in reg_warnings {
-                    eprintln!("RASM WARNING: {}", warning);
-                }
-            }
-            AsmOperand::InOut { name, reg, expr } => {
-                if let Some(name) = name {
-                    eprintln!(
-                        "RASM: Operand {}: Named InOut {}={} reg={}, expr={}",
-                        i,
-                        name,
-                        reg,
-                        reg,
-                        quote!(#expr)
-                    );
-                } else {
-                    eprintln!(
-                        "RASM: Operand {}: InOut reg={}, expr={}",
-                        i,
-                        reg,
-                        quote!(#expr)
-                    );
-                }
-                let reg_warnings = validate_risc_v_register(&reg.to_string());
-                for warning in reg_warnings {
-                    eprintln!("RASM WARNING: {}", warning);
-                }
-            }
-            AsmOperand::Options(expr) => {
-                eprintln!("RASM: Operand {}: Options expr={}", i, quote!(#expr));
-            }
-            AsmOperand::Raw(expr) => {
-                eprintln!("RASM: Operand {}: Raw expr={}", i, quote!(#expr));
-            }
-        }
+    for operand in asm_input.operands.iter() {
+        eprintln!("{}", operand);
     }
 
     // Analyze instructions for multi-instruction and CSR support
