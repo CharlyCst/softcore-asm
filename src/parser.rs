@@ -1,3 +1,5 @@
+//! Procedural Macro Parser
+
 use quote::quote;
 use syn::{
     Expr, Ident, LitStr, Token,
@@ -9,6 +11,7 @@ use syn::{
 pub struct AsmInput {
     pub template: LitStr,
     pub operands: Vec<AsmOperand>,
+    #[allow(dead_code)]
     pub options: Vec<String>,
 }
 
@@ -138,7 +141,83 @@ mod tests {
     use super::*;
 
     #[test]
-    fn register_operand() {
-        todo!()
+    fn register_operand_direction() {
+        // Testing input direction
+        let tokens = quote! {in(reg) foo};
+        let parsed = syn::parse2::<RegisterOperand>(tokens).unwrap();
+        assert!(parsed.is_input);
+        assert!(!parsed.is_output);
+
+        // Testing output direction
+        let tokens = quote! {out(reg) foo};
+        let parsed = syn::parse2::<RegisterOperand>(tokens).unwrap();
+        assert!(!parsed.is_input);
+        assert!(parsed.is_output);
+
+        // Testing inout direction
+        let tokens = quote! {inout(reg) foo};
+        let parsed = syn::parse2::<RegisterOperand>(tokens).unwrap();
+        assert!(parsed.is_input);
+        assert!(parsed.is_output);
+    }
+
+    #[test]
+    fn register_operand_ident() {
+        let tokens = quote! {in(reg) foo};
+        let parsed = syn::parse2::<RegisterOperand>(tokens).unwrap();
+        assert_eq!(parsed.ident, None);
+
+        let tokens = quote! {bar = in(reg) foo};
+        let parsed = syn::parse2::<RegisterOperand>(tokens).unwrap();
+        assert!(parsed.ident.is_some());
+        assert_eq!(parsed.ident.unwrap().to_string(), "bar");
+    }
+
+    #[test]
+    fn register_operand_expr() {
+        let tokens = quote! {in(reg) foo};
+        let parsed = syn::parse2::<RegisterOperand>(tokens).unwrap();
+        match parsed.expr {
+            Expr::Path(path) => {
+                let ident = path.path.get_ident().unwrap();
+                assert_eq!(ident.to_string(), "foo");
+            }
+            _ => panic!("Expected an identifier (path of lenght 1)"),
+        }
+
+        let tokens = quote! {in(reg) 0xbeef};
+        let parsed = syn::parse2::<RegisterOperand>(tokens).unwrap();
+        match parsed.expr {
+            Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Int(_),
+                ..
+            }) => {}
+            _ => panic!("Expected an integer literal"),
+        }
+    }
+
+    #[test]
+    fn asm_operand() {
+        let tokens = quote! {in(reg) 0xbeef};
+        syn::parse2::<AsmOperand>(tokens).unwrap();
+
+        let tokens = quote! {options(nomem)};
+        syn::parse2::<AsmOperand>(tokens).unwrap();
+    }
+
+    #[test]
+    fn asm_input() {
+        let tokens = quote! { "wfi" };
+        syn::parse2::<AsmInput>(tokens).unwrap();
+
+        let tokens = quote! {
+            "csrrw {prev}, mscratch, {x}
+            csrrw {final_val}, mscratch, x0",
+            x = in(reg) value,
+            prev = out(reg) prev_value,
+            final_val = out(reg) final_value,
+            options(nomem)
+        };
+        syn::parse2::<AsmInput>(tokens).unwrap();
     }
 }
