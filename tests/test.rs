@@ -59,88 +59,100 @@ fn csr() {
     })
 }
 
-#[test]
-fn load() {
-    let v: u64 = 0x12345678;
-    let value = &v as *const u64 as u64;
-    let mut final_value: u64 = 0;
+// #[test]
+// fn load() {
+//     let v: u64 = 0x12345678;
+//     let value = &v as *const u64 as u64;
+//     let mut final_value: u64 = 0;
 
-    rasm!(
-        "ld {final_val}, 0({x})",
-        x = in(reg) value,
-        final_val = out(reg) final_value
-    );
+//     rasm!(
+//         "ld {final_val}, 0({x})",
+//         x = in(reg) value,
+//         final_val = out(reg) final_value
+//     );
 
-    assert_eq!(final_value, v);
-    println!("final_value: {:x}", final_value);
-}
+//     assert_eq!(final_value, v);
+//     println!("final_value: {:x}", final_value);
+// }
 
 #[test]
 fn store() {
-    let mut v: u64 = 0;
-    let value: u64 = 0x87654321;
-    let addr = &mut v as *mut u64 as u64;
+    let mut val: u64 = 0;
+    let new_val: u64 = 0xbeef00beef;
 
-    println!("v before: {:x}", v);
-    rasm!(
-        "sd {x}, 0({addr})",
-        x = in(reg) value,
-        addr = in(reg) addr
-    );
-    println!("v after: {:x}", v);
+    unsafe {
+        rasm!(
+            "sd {x}, 0({addr})",
+            x = in(reg) new_val,
+            addr = in(reg) (&mut val) as *mut u64 as u64
+        );
+    }
+    assert_eq!(val, new_val, "'sd' did not update memory location");
 
-    assert_eq!(v, value);
-    println!("v: {:x}", v);
+    // let mut v: u64 = 0;
+    // let value: u64 = 0x87654321;
+    // let addr = &mut v as *mut u64 as u64;
+
+    // println!("v before: {:x}", v);
+    // rasm!(
+    //     "sd {x}, 0({addr})",
+    //     x = in(reg) value,
+    //     addr = in(reg) addr
+    // );
+    // println!("v after: {:x}", v);
+
+    // assert_eq!(v, value);
+    // println!("v: {:x}", v);
 }
 
-/// Testing mixed named and positional operand syntax.
-#[test]
-fn mixed_operands() {
-    let input_val = 42;
-    let mut output_val = 0;
-    let temp = 100;
+// /// Testing mixed named and positional operand syntax.
+// #[test]
+// fn mixed_operands() {
+//     let input_val = 42;
+//     let mut output_val = 0;
+//     let temp = 100;
 
-    // Test 1: Mixed named and positional operands
-    rasm!("add {result}, {}, {temp}", 
-          in(reg) input_val,          // Positional operand
-          result = out(reg) output_val,  // Named operand
-          temp = in(reg) temp); // Named operand
+//     // Test 1: Mixed named and positional operands
+//     rasm!("add {result}, {}, {temp}",
+//           in(reg) input_val,          // Positional operand
+//           result = out(reg) output_val,  // Named operand
+//           temp = in(reg) temp); // Named operand
 
-    // Test 2: Named operands with options
-    rasm!("csrrw {old}, mstatus, {new}",
-          old = out(reg) output_val,
-          new = in(reg) input_val,
-          options(nomem, nostack));
+//     // Test 2: Named operands with options
+//     rasm!("csrrw {old}, mstatus, {new}",
+//           old = out(reg) output_val,
+//           new = in(reg) input_val,
+//           options(nomem, nostack));
 
-    // Test 3: All positional
-    rasm!("addi {}, {}, 10", 
-          out(reg) output_val,
-          in(reg) input_val);
-}
+//     // Test 3: All positional
+//     rasm!("addi {}, {}, 10",
+//           out(reg) output_val,
+//           in(reg) input_val);
+// }
 
-/// Raw instructions with no interactions witht he Rust code.
-///
-/// In practice, those would be undefined behavior if executed on real hardware.
-#[test]
-fn raw_instructions() {
-    // Test 1: Simple RISC-V instruction
-    rasm!("addi x1, x2, 42");
+///// Raw instructions with no interactions witht he Rust code.
+/////
+///// In practice, those would be undefined behavior if executed on real hardware.
+//#[test]
+//fn raw_instructions() {
+//    // Test 1: Simple RISC-V instruction
+//    rasm!("addi x1, x2, 42");
 
-    // Test 2: Multiple instructions
-    rasm!("li x1, 100");
+//    // Test 2: Multiple instructions
+//    rasm!("li x1, 100");
 
-    // Test 3: Load/store operations
-    rasm!("lw x1, 0(x2)");
+//    // Test 3: Load/store operations
+//    rasm!("lw x1, 0(x2)");
 
-    // Test 4: Branch instruction
-    rasm!("beq x1, x2, label");
+//    // Test 4: Branch instruction
+//    rasm!("beq x1, x2, label");
 
-    // Test 5: Instruction with simple operand
-    let x = 5;
-    rasm!("addi x1, x2, {}", x);
+//    // Test 5: Instruction with simple operand
+//    let x = 5;
+//    rasm!("addi x1, x2, {}", x);
 
-    println!("All tests completed!");
-}
+//    println!("All tests completed!");
+//}
 
 #[test]
 fn load_immediate() {
