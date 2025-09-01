@@ -317,7 +317,6 @@ pub fn rasm(input: TokenStream) -> TokenStream {
     }
 
     // Print operands information
-    eprintln!("RASM: Found {} operands", asm_input.operands.len());
     for operand in asm_input.operands.iter() {
         eprintln!("{}", operand);
     }

@@ -6,6 +6,7 @@ use syn::Error;
 pub fn emit_softcore_instr(instr: &InstructionInfo) -> Result<TokenStream, Error> {
     let ops = &instr.operands;
     match instr.instr.as_str() {
+        // CSR operations
         "csrrw" => {
             check_nb_op(instr, 3)?;
             let rd = emit_reg(&ops[0]);
@@ -48,6 +49,16 @@ pub fn emit_softcore_instr(instr: &InstructionInfo) -> Result<TokenStream, Error
             let rs1 = emit_reg(&ops[1]);
             Ok(quote! { core.csrrc(#rd, #csr, #rs1).unwrap(); })
         }
+
+        // Loads and Stores
+        "li" => {
+            check_nb_op(instr, 2)?;
+            let rd = emit_reg(&ops[0]);
+            let value = emit_integer(&ops[1]);
+            Ok(quote! {core.set(#rd, (#value as u64))})
+        }
+
+        // Unknown instructions
         _ => Err(Error::new(
             Span::call_site(),
             format!("Unknown instruction: {}", instr.instr),
@@ -111,4 +122,20 @@ pub fn emit_reg(reg: &str) -> TokenStream {
 /// Creates tokens corresponding to the provided CSR register name.
 fn emit_csr(csr: &str) -> TokenStream {
     quote! {csr_name_map_backwards(#csr).bits()}
+}
+
+fn emit_integer(n: &str) -> TokenStream {
+    if n.starts_with("0x") {
+        let Ok(n) = i128::from_str_radix(n.trim_start_matches("0x"), 16) else {
+            return Error::new(Span::call_site(), format!("Invalid constant '{n}'"))
+                .to_compile_error();
+        };
+        quote! {#n}.into()
+    } else {
+        let Ok(n) = i128::from_str_radix(n, 10) else {
+            return Error::new(Span::call_site(), format!("Invalid constant '{n}'"))
+                .to_compile_error();
+        };
+        quote! {#n}.into()
+    }
 }
