@@ -136,7 +136,7 @@ fn generate_softcore_code(analysis: &MultiInstructionAnalysis) -> proc_macro2::T
             let reg = riscv::emit_reg(&reg_alloc.register);
             let expr = &reg_alloc.expr;
             setup_code.push(quote! {
-                core.set(#reg, #expr);
+                core.set(#reg, #expr as u64);
             });
         }
     }

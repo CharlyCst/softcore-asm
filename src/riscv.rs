@@ -57,7 +57,47 @@ pub fn emit_softcore_instr(instr: &InstructionInfo) -> Result<TokenStream, Error
             check_nb_op(instr, 2)?;
             let rd = emit_reg(&ops[0]);
             let value = emit_integer(&ops[1]);
-            Ok(quote! {core.set(#rd, (#value as u64))})
+            Ok(quote! {core.set(#rd, #value as u64)})
+        }
+        "ld" => {
+            check_nb_op(instr, 2)?;
+            let rd = emit_reg(&ops[0]);
+            let (imm, rs1) = emit_immediate_offset(&ops[1])?;
+            Ok(quote! {
+                let addr = (#imm.wrapping_add(core.get(#rs1))) as usize as *const u64;
+                let val = core::ptr::read(addr);
+                core.set(#rd, val as u64);
+            })
+        }
+        "lwu" => {
+            check_nb_op(instr, 2)?;
+            let rd = emit_reg(&ops[0]);
+            let (imm, rs1) = emit_immediate_offset(&ops[1])?;
+            Ok(quote! {
+                let addr = (#imm.wrapping_add(core.get(#rs1))) as usize as *const u32;
+                let val = core::ptr::read(addr);
+                core.set(#rd, val as u64);
+            })
+        }
+        "lhu" => {
+            check_nb_op(instr, 2)?;
+            let rd = emit_reg(&ops[0]);
+            let (imm, rs1) = emit_immediate_offset(&ops[1])?;
+            Ok(quote! {
+                let addr = (#imm.wrapping_add(core.get(#rs1))) as usize as *const u32;
+                let val = core::ptr::read(addr);
+                core.set(#rd, val as u64);
+            })
+        }
+        "lbu" => {
+            check_nb_op(instr, 2)?;
+            let rd = emit_reg(&ops[0]);
+            let (imm, rs1) = emit_immediate_offset(&ops[1])?;
+            Ok(quote! {
+                let addr = (#imm.wrapping_add(core.get(#rs1))) as usize as *const u32;
+                let val = core::ptr::read(addr);
+                core.set(#rd, val as u64);
+            })
         }
         "sd" => {
             check_nb_op(instr, 2)?;
