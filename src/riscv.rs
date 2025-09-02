@@ -65,8 +65,38 @@ pub fn emit_softcore_instr(instr: &InstructionInfo) -> Result<TokenStream, Error
             let (imm, rs1) = emit_immediate_offset(&ops[1])?;
             Ok(quote! {
                 let val = core.get(#rs2);
-                let addr = (#imm + core.get(#rs1) as i128) as usize as *mut u64;
-                core::ptr::write((addr) as *mut u64, val as u64);
+                let addr = (#imm.wrapping_add(core.get(#rs1))) as usize as *mut u64;
+                core::ptr::write(addr, val as u64);
+            })
+        }
+        "sw" => {
+            check_nb_op(instr, 2)?;
+            let rs2 = emit_reg(&ops[0]);
+            let (imm, rs1) = emit_immediate_offset(&ops[1])?;
+            Ok(quote! {
+                let val = core.get(#rs2);
+                let addr = (#imm.wrapping_add(core.get(#rs1))) as usize as *mut u32;
+                core::ptr::write(addr, val as u32);
+            })
+        }
+        "sh" => {
+            check_nb_op(instr, 2)?;
+            let rs2 = emit_reg(&ops[0]);
+            let (imm, rs1) = emit_immediate_offset(&ops[1])?;
+            Ok(quote! {
+                let val = core.get(#rs2);
+                let addr = (#imm.wrapping_add(core.get(#rs1))) as usize as *mut u16;
+                core::ptr::write(addr, val as u16);
+            })
+        }
+        "sb" => {
+            check_nb_op(instr, 2)?;
+            let rs2 = emit_reg(&ops[0]);
+            let (imm, rs1) = emit_immediate_offset(&ops[1])?;
+            Ok(quote! {
+                let val = core.get(#rs2);
+                let addr = (#imm.wrapping_add(core.get(#rs1))) as usize as *mut u8;
+                core::ptr::write(addr, val as u8);
             })
         }
 
@@ -136,6 +166,11 @@ fn emit_csr(csr: &str) -> TokenStream {
     quote! {csr_name_map_backwards(#csr).bits()}
 }
 
+/// Returns the parsed integer as a TokenStream.
+///
+/// All integers are encoded as u64, this means that negative numbers are represented as 2's
+/// complements. It is still possible to add two u64 as if they were signed using
+/// `.wrapping_add()`, but care must be taken in case a negative integer is required.
 fn emit_integer(n: &str) -> TokenStream {
     static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(-)?(0x)?([0-9A-Fa-f]+)").unwrap());
 
@@ -152,11 +187,11 @@ fn emit_integer(n: &str) -> TokenStream {
     let base = if caps.get(2).is_some() { 16 } else { 10 };
 
     // Parse the constant
-    let Ok(mut n) = i128::from_str_radix(num.as_str(), base) else {
+    let Ok(mut n) = u64::from_str_radix(num.as_str(), base) else {
         return Error::new(Span::call_site(), format!("Invalid constant '{n}'")).to_compile_error();
     };
     if is_negative {
-        n = -n;
+        n = -(n as i64) as u64;
     }
     quote! {#n}
 }
@@ -195,75 +230,75 @@ mod tests {
     fn test_emit_integer() {
         // Test positive decimal
         let result = emit_integer("123");
-        assert_eq!(result.to_string(), "123i128");
+        assert_eq!(result.to_string(), "123u64");
 
         // Test negative decimal
         let result = emit_integer("-456");
-        assert_eq!(result.to_string(), "- 456i128");
+        assert_eq!(result.to_string(), "18446744073709551160u64");
 
         // Test zero
         let result = emit_integer("0");
-        assert_eq!(result.to_string(), "0i128");
+        assert_eq!(result.to_string(), "0u64");
 
         // Test positive hexadecimal
         let result = emit_integer("0x10");
-        assert_eq!(result.to_string(), "16i128");
+        assert_eq!(result.to_string(), "16u64");
 
         // Test negative hexadecimal
         let result = emit_integer("-0xFF");
-        assert_eq!(result.to_string(), "- 255i128");
+        assert_eq!(result.to_string(), "18446744073709551361u64");
 
         // Test hexadecimal with mixed case
         let result = emit_integer("0xAbC");
-        assert_eq!(result.to_string(), "2748i128");
+        assert_eq!(result.to_string(), "2748u64");
 
         // Test negative zero
         let result = emit_integer("-0");
-        assert_eq!(result.to_string(), "0i128");
+        assert_eq!(result.to_string(), "0u64");
 
         // Test large hexadecimal value
         let result = emit_integer("0x1234");
-        assert_eq!(result.to_string(), "4660i128");
+        assert_eq!(result.to_string(), "4660u64");
 
         // Test negative large hexadecimal
         let result = emit_integer("-0x1000");
-        assert_eq!(result.to_string(), "- 4096i128");
+        assert_eq!(result.to_string(), "18446744073709547520u64");
 
         // Test single digit hex
         let result = emit_integer("0x5");
-        assert_eq!(result.to_string(), "5i128");
+        assert_eq!(result.to_string(), "5u64");
     }
 
     #[test]
     fn immediate_offset() {
         // Test valid decimal immediate with register
         let result = emit_immediate_offset("123(x1)").unwrap();
-        assert_eq!(result.0.to_string(), "123i128");
+        assert_eq!(result.0.to_string(), "123u64");
         assert_eq!(result.1.to_string(), "reg :: X1");
 
         // Test valid negative decimal immediate
         let result = emit_immediate_offset("-456(sp)").unwrap();
-        assert_eq!(result.0.to_string(), "- 456i128");
+        assert_eq!(result.0.to_string(), "18446744073709551160u64");
         assert_eq!(result.1.to_string(), "reg :: X2");
 
         // Test valid hexadecimal immediate
         let result = emit_immediate_offset("0x10(a0)").unwrap();
-        assert_eq!(result.0.to_string(), "16i128");
+        assert_eq!(result.0.to_string(), "16u64");
         assert_eq!(result.1.to_string(), "reg :: X10");
 
         // Test valid negative hexadecimal immediate
         let result = emit_immediate_offset("-0xFF(t0)").unwrap();
-        assert_eq!(result.0.to_string(), "- 255i128");
+        assert_eq!(result.0.to_string(), "18446744073709551361u64");
         assert_eq!(result.1.to_string(), "reg :: X5");
 
         // Test zero immediate
         let result = emit_immediate_offset("0(zero)").unwrap();
-        assert_eq!(result.0.to_string(), "0i128");
+        assert_eq!(result.0.to_string(), "0u64");
         assert_eq!(result.1.to_string(), "reg :: X0");
 
         // Test register aliases
         let result = emit_immediate_offset("8(fp)").unwrap();
-        assert_eq!(result.0.to_string(), "8i128");
+        assert_eq!(result.0.to_string(), "8u64");
         assert_eq!(result.1.to_string(), "reg :: X8");
 
         // Test invalid formats - missing parentheses

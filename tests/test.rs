@@ -75,19 +75,98 @@ fn csr() {
 //     println!("final_value: {:x}", final_value);
 // }
 
+/// Tests the store instructions.
+///
+/// In those tests we define an array of three elements on the stack, take a pointer to the middle
+/// element, and try to write all three of them.
 #[test]
 fn store() {
-    let mut val: u64 = 0;
-    let new_val: u64 = 0xbeef00beef;
-
     unsafe {
+        // Double words
+        let mut vals = [0u64; 3];
+        let vals_addr = vals.as_mut_ptr().offset(1);
+        let val0: u64 = 0xbeef00beef;
+        let val1: u64 = 0x0badbed00badbed0;
+        let val2: u64 = 0x0123456789abcdef;
+
         rasm!(
-            "sd {x}, 0({addr})",
-            x = in(reg) new_val,
-            addr = in(reg) (&mut val) as *mut u64 as u64
+            "sd {val0}, -8({addr})
+             sd {val1}, 0({addr})
+             sd {val2},  8({addr})",
+            val0 = in(reg) val0,
+            val1 = in(reg) val1,
+            val2 = in(reg) val2,
+            addr = in(reg) vals_addr as u64
         );
+
+        eprintln!("{:x?}", vals);
+        assert_eq!(vals[0], val0);
+        assert_eq!(vals[1], val1);
+        assert_eq!(vals[2], val2);
+
+        // Words
+        let mut vals = [0u32; 3];
+        let vals_addr = vals.as_mut_ptr().offset(1);
+        let val0: u32 = 0xbeef0000;
+        let val1: u32 = 0x0badbed0;
+        let val2: u32 = 0x01234567;
+
+        rasm!(
+            "sw {val0}, -4({addr})
+             sw {val1}, 0({addr})
+             sw {val2},  4({addr})",
+            val0 = in(reg) val0 as u64,
+            val1 = in(reg) val1 as u64,
+            val2 = in(reg) val2 as u64,
+            addr = in(reg) vals_addr as u64
+        );
+
+        assert_eq!(vals[0], val0);
+        assert_eq!(vals[1], val1);
+        assert_eq!(vals[2], val2);
+
+        // Half words
+        let mut vals = [0u16; 3];
+        let vals_addr = vals.as_mut_ptr().offset(1);
+        let val0: u16 = 0xbeef;
+        let val1: u16 = 0x0bad;
+        let val2: u16 = 0x0123;
+
+        rasm!(
+            "sh {val0}, -2({addr})
+             sh {val1}, 0({addr})
+             sh {val2},  2({addr})",
+            val0 = in(reg) val0 as u64,
+            val1 = in(reg) val1 as u64,
+            val2 = in(reg) val2 as u64,
+            addr = in(reg) vals_addr as u64
+        );
+
+        assert_eq!(vals[0], val0);
+        assert_eq!(vals[1], val1);
+        assert_eq!(vals[2], val2);
+
+        // Bytes
+        let mut vals = [0u8; 3];
+        let vals_addr = vals.as_mut_ptr().offset(1);
+        let val0: u8 = 0xbe;
+        let val1: u8 = 0x0b;
+        let val2: u8 = 0x01;
+
+        rasm!(
+            "sb {val0}, -1({addr})
+             sb {val1}, 0({addr})
+             sb {val2},  1({addr})",
+            val0 = in(reg) val0 as u64,
+            val1 = in(reg) val1 as u64,
+            val2 = in(reg) val2 as u64,
+            addr = in(reg) vals_addr as u64
+        );
+
+        assert_eq!(vals[0], val0);
+        assert_eq!(vals[1], val1);
+        assert_eq!(vals[2], val2);
     }
-    assert_eq!(val, new_val, "'sd' did not update memory location");
 
     // let mut v: u64 = 0;
     // let value: u64 = 0x87654321;
