@@ -60,6 +60,13 @@ pub fn emit_softcore_instr(instr: &InstructionInfo) -> Result<TokenStream, Error
             let rs1 = emit_reg(&ops[2]);
             Ok(quote! { core.csrrc(#rd, #csr, #rs1).unwrap(); })
         }
+        "csrr" => {
+            check_nb_op(instr, 2)?;
+            let rd = emit_reg(&ops[0]);
+            let csr = emit_csr(&ops[1]);
+            let rs1 = emit_reg("x0");
+            Ok(quote! { core.csrrs(#rd, #csr, #rs1).unwrap(); })
+        }
         "csrw" => {
             check_nb_op(instr, 2)?;
             let rd = emit_reg("x0");

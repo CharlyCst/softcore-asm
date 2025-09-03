@@ -362,3 +362,42 @@ fn load_immediate() {
     rasm!("li x1, -0xbeef");
     SOFT_CORE.with_borrow_mut(|core| assert_eq!(core.get(reg::X1), (-0xbeefi64 as u64)));
 }
+
+#[test]
+fn miralis_trap_detector() {
+    use softcore_rv64::raw;
+    const TRAP_ADDR: u64 = 0xffff00;
+
+    SOFT_CORE.with_borrow_mut(|core| {
+        for i in 1..32 {
+            core.set(raw::regidx::new(i as u8), 100 + i as u64);
+        }
+        core.mepc = bv(TRAP_ADDR);
+    });
+
+    rasm!(
+        // Save x5
+        "csrw mscratch, x5",
+        // Skip illegal instruction (pc += 4)
+        "csrr x5, mepc",
+        "addi x5, x5, 4",
+        "csrw mepc, x5",
+        // Set mscratch to 1
+        "addi x5, x0, 1",
+        "csrrw x5, mscratch, x5",
+        // Return back to miralis
+        "mret",
+    );
+
+    SOFT_CORE.with_borrow_mut(|core| {
+        for i in 1..32 {
+            assert_eq!(
+                core.get(raw::regidx::new(i as u8)),
+                100 + i as u64,
+                "Unexpected value in x{i}"
+            );
+        }
+        assert_eq!(core.mepc.bits(), TRAP_ADDR + 4);
+        assert_eq!(core.mscratch.bits(), 1);
+    });
+}
