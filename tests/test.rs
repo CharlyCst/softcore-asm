@@ -3,8 +3,9 @@ use rasm::rasm;
 use std::thread_local;
 
 use softcore_rv64::raw::csr_name_map_backwards;
+use softcore_rv64::raw::rop;
 use softcore_rv64::registers as reg;
-use softcore_rv64::{Core, config, new_core};
+use softcore_rv64::{Core, ast, config, new_core};
 
 // Each thread gets its own copy of the core, this prevent tests using different threads inside a
 // same process to share the same core.
@@ -241,6 +242,56 @@ fn store() {
     }
 }
 
+#[test]
+fn mixed_bag() {
+    let x = 42;
+    let y = 20;
+    let mut sum = 0;
+    rasm!(
+        "add {sum}, {x}, {y}",
+        x = in(reg) x,
+        y = in(reg) y,
+        sum = out(reg) sum
+    );
+    assert_eq!(sum, x + y);
+
+    let mut diff = 0;
+    rasm!(
+        "sub {diff}, {x}, {y}",
+        x = in(reg) x,
+        y = in(reg) y,
+        diff = out(reg) diff
+    );
+    assert_eq!(diff, x - y);
+
+    let mut and = 0;
+    rasm!(
+        "and {and}, {x}, {y}",
+        x = in(reg) x,
+        y = in(reg) y,
+        and = out(reg) and
+    );
+    assert_eq!(and, x & y);
+
+    let mut or = 0;
+    rasm!(
+        "or {or}, {x}, {y}",
+        x = in(reg) x,
+        y = in(reg) y,
+        or = out(reg) or
+    );
+    assert_eq!(or, x | y);
+
+    let mut xor = 0;
+    rasm!(
+        "xor {xor}, {x}, {y}",
+        x = in(reg) x,
+        y = in(reg) y,
+        xor = out(reg) xor
+    );
+    assert_eq!(xor, x ^ y);
+}
+
 // /// Testing mixed named and positional operand syntax.
 // #[test]
 // fn mixed_operands() {
@@ -266,30 +317,6 @@ fn store() {
 //           in(reg) input_val);
 // }
 
-///// Raw instructions with no interactions witht he Rust code.
-/////
-///// In practice, those would be undefined behavior if executed on real hardware.
-//#[test]
-//fn raw_instructions() {
-//    // Test 1: Simple RISC-V instruction
-//    rasm!("addi x1, x2, 42");
-
-//    // Test 2: Multiple instructions
-//    rasm!("li x1, 100");
-
-//    // Test 3: Load/store operations
-//    rasm!("lw x1, 0(x2)");
-
-//    // Test 4: Branch instruction
-//    rasm!("beq x1, x2, label");
-
-//    // Test 5: Instruction with simple operand
-//    let x = 5;
-//    rasm!("addi x1, x2, {}", x);
-
-//    println!("All tests completed!");
-//}
-
 #[test]
 fn load_immediate() {
     rasm!("li x1, 100");
@@ -299,6 +326,6 @@ fn load_immediate() {
 
     rasm!("li x1, -100");
     SOFT_CORE.with_borrow_mut(|core| assert_eq!(core.get(reg::X1), (-100i64 as u64)));
-    // rasm!("li x1, -0xbeef");
-    // SOFT_CORE.with_borrow_mut(|core| assert_eq!(core.get(reg::X1), (-0xbeefi64 as u64)));
+    rasm!("li x1, -0xbeef");
+    SOFT_CORE.with_borrow_mut(|core| assert_eq!(core.get(reg::X1), (-0xbeefi64 as u64)));
 }

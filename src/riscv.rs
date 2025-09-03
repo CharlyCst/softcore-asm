@@ -5,6 +5,23 @@ use regex::Regex;
 use std::sync::LazyLock;
 use syn::Error;
 
+// ————————————————————————————— Helper Macros —————————————————————————————— //
+
+/// Emit the tokens for an RTYPE instruction
+macro_rules! rtype {
+    ($instr: ident, $ops: ident, $op:path) => {{
+        check_nb_op($instr, 3)?;
+        let rd = emit_reg(&$ops[0]);
+        let rs1 = emit_reg(&$ops[1]);
+        let rs2 = emit_reg(&$ops[2]);
+        Ok(quote! {
+            core.execute(ast::RTYPE((#rs2, #rs1, #rd, rop::$op)));
+        })
+    }};
+}
+
+// ————————————————————————— Instruction to Tokens —————————————————————————— //
+
 pub fn emit_softcore_instr(instr: &InstructionInfo) -> Result<TokenStream, Error> {
     let ops = &instr.operands;
     match instr.instr.as_str() {
@@ -139,6 +156,18 @@ pub fn emit_softcore_instr(instr: &InstructionInfo) -> Result<TokenStream, Error
                 core::ptr::write(addr, val as u8);
             })
         }
+
+        // Arithmetic
+        "add" => rtype!(instr, ops, ADD),
+        "slt" => rtype!(instr, ops, SLT),
+        "sltu" => rtype!(instr, ops, SLTU),
+        "and" => rtype!(instr, ops, AND),
+        "or" => rtype!(instr, ops, OR),
+        "xor" => rtype!(instr, ops, XOR),
+        "sll" => rtype!(instr, ops, SLL),
+        "srl" => rtype!(instr, ops, SRL),
+        "sub" => rtype!(instr, ops, SUB),
+        "sra" => rtype!(instr, ops, SRA),
 
         // Unknown instructions
         _ => Err(Error::new(
