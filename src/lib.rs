@@ -44,8 +44,9 @@ fn parse_instruction(instr: &str) -> Option<InstructionInfo> {
     Some(InstructionInfo { instr, operands })
 }
 
-fn parse_instructions(assembly_template: &str) -> Vec<InstructionInfo> {
-    let lines: Vec<&str> = assembly_template
+fn parse_instructions(assembly_template: &[String]) -> Vec<InstructionInfo> {
+    let asm_text = assembly_template.join("\n");
+    let lines: Vec<&str> = asm_text
         .lines()
         .map(|line| line.trim())
         .filter(|line| !line.is_empty() || line.starts_with("//"))
@@ -97,10 +98,11 @@ fn build_operand_register_map(
 }
 
 fn analyze_multi_instructions(
-    assembly_template: &str,
+    assembly_template: &[String],
     operands: &[AsmOperand],
 ) -> MultiInstructionAnalysis {
-    static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\{\s*([A-Za-z0-9_]+)\s*\}").unwrap());
+    static RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"\{\s*([A-Za-z0-9_]+)\s*\}").unwrap());
 
     let (register_allocation, placeholder_instantiation) = build_operand_register_map(operands);
     let mut instructions = parse_instructions(assembly_template);
@@ -175,10 +177,14 @@ pub fn rasm(input: TokenStream) -> TokenStream {
     let asm_input = parse_macro_input!(input as AsmInput);
 
     // Extract the assembly string
-    let assembly_string = asm_input.template.value();
+    let assembly_strings = asm_input
+        .template
+        .iter()
+        .map(|s| s.value())
+        .collect::<Vec<String>>();
 
     // Analyze instructions for multi-instruction and CSR support
-    let analysis = analyze_multi_instructions(&assembly_string, &asm_input.operands);
+    let analysis = analyze_multi_instructions(&assembly_strings, &asm_input.operands);
     let softcore_code = generate_softcore_code(&analysis);
     quote! {
         {

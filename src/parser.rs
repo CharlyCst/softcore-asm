@@ -9,7 +9,7 @@ use syn::{
 // ———————————————————————— Macro Syntax Definition ————————————————————————— //
 
 pub struct AsmInput {
-    pub template: LitStr,
+    pub template: Vec<LitStr>,
     pub operands: Vec<AsmOperand>,
     #[allow(dead_code)]
     pub options: Vec<String>,
@@ -103,7 +103,12 @@ impl Parse for AsmOperand {
 
 impl Parse for AsmInput {
     fn parse(input: ParseStream) -> Result<Self> {
-        let template = input.parse::<LitStr>()?;
+        let mut template = Vec::new();
+        template.push(input.parse::<LitStr>()?);
+        while input.peek(Token![,]) && input.peek2(LitStr) {
+            input.parse::<Token![,]>()?;
+            template.push(input.parse::<LitStr>()?);
+        }
 
         let mut operands = Vec::new();
         let mut options = Vec::new();
