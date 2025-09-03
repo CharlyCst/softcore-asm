@@ -20,6 +20,19 @@ macro_rules! rtype {
     }};
 }
 
+/// Emit the tokens for an ITYPE instruction
+macro_rules! itype {
+    ($instr: ident, $ops: ident, $op:path) => {{
+        check_nb_op($instr, 3)?;
+        let rd = emit_reg(&$ops[0]);
+        let rs1 = emit_reg(&$ops[1]);
+        let imm = emit_integer(&$ops[2]);
+        Ok(quote! {
+            core.execute(ast::ITYPE((bv(#imm), #rs1, #rd, iop::$op)));
+        })
+    }};
+}
+
 // ————————————————————————— Instruction to Tokens —————————————————————————— //
 
 pub fn emit_softcore_instr(instr: &InstructionInfo) -> Result<TokenStream, Error> {
@@ -157,7 +170,7 @@ pub fn emit_softcore_instr(instr: &InstructionInfo) -> Result<TokenStream, Error
             })
         }
 
-        // Arithmetic
+        // RType
         "add" => rtype!(instr, ops, ADD),
         "slt" => rtype!(instr, ops, SLT),
         "sltu" => rtype!(instr, ops, SLTU),
@@ -168,6 +181,14 @@ pub fn emit_softcore_instr(instr: &InstructionInfo) -> Result<TokenStream, Error
         "srl" => rtype!(instr, ops, SRL),
         "sub" => rtype!(instr, ops, SUB),
         "sra" => rtype!(instr, ops, SRA),
+
+        // IType
+        "addi" => itype!(instr, ops, ADDI),
+        "slti" => itype!(instr, ops, SLTI),
+        "sltiu" => itype!(instr, ops, SLTIU),
+        "andi" => itype!(instr, ops, ANDI),
+        "ori" => itype!(instr, ops, ORI),
+        "xori" => itype!(instr, ops, XORI),
 
         // Unknown instructions
         _ => Err(Error::new(

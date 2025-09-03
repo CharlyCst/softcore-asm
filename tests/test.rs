@@ -2,8 +2,9 @@ use core::cell::RefCell;
 use rasm::rasm;
 use std::thread_local;
 
+use softcore_rv64::prelude::bv;
 use softcore_rv64::raw::csr_name_map_backwards;
-use softcore_rv64::raw::rop;
+use softcore_rv64::raw::{iop, rop};
 use softcore_rv64::registers as reg;
 use softcore_rv64::{Core, ast, config, new_core};
 
@@ -243,7 +244,7 @@ fn store() {
 }
 
 #[test]
-fn mixed_bag() {
+fn rtype() {
     let x = 42;
     let y = 20;
     let mut sum = 0;
@@ -290,6 +291,38 @@ fn mixed_bag() {
         xor = out(reg) xor
     );
     assert_eq!(xor, x ^ y);
+}
+
+#[test]
+fn itype() {
+    let x = 42;
+    let mut sum1 = 0;
+    let mut sum2 = 0;
+    rasm!(
+        "addi {sum1}, {x}, 20",
+        "addi {sum2}, {x}, -20",
+        x = in(reg) x,
+        sum1 = out(reg) sum1,
+        sum2 = out(reg) sum2,
+    );
+    assert_eq!(sum1, x + 20);
+    assert_eq!(sum2, x - 20);
+
+    let mut and_result = 0;
+    let mut or_result = 0;
+    let mut xor_result = 0;
+    rasm!(
+        "andi {and_result}, {x}, 0x0f",
+        "ori {or_result}, {x}, 0x80",
+        "xori {xor_result}, {x}, 0xff",
+        x = in(reg) x,
+        and_result = out(reg) and_result,
+        or_result = out(reg) or_result,
+        xor_result = out(reg) xor_result,
+    );
+    assert_eq!(and_result, x & 0x0f);
+    assert_eq!(or_result, x | 0x80);
+    assert_eq!(xor_result, x ^ 0xff);
 }
 
 // /// Testing mixed named and positional operand syntax.
