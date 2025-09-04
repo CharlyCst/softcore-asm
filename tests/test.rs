@@ -1,5 +1,5 @@
 use core::cell::RefCell;
-use rasm::rasm;
+use softcore_asm::rasm;
 use std::thread_local;
 
 use softcore_rv64::prelude::bv;
