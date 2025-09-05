@@ -212,6 +212,13 @@ pub fn rasm(input: TokenStream) -> TokenStream {
     let softcore_code = generate_softcore_code(&analysis);
     quote! {
         {
+            #[allow(unused_imports)]
+            use softcore_rv64::{
+                ast,
+                prelude::bv,
+                registers as reg,
+                raw::{iop, rop, csr_name_map_backwards},
+            };
             #softcore_code
         }
     }

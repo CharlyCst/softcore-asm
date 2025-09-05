@@ -3,10 +3,8 @@ use softcore_asm::rasm;
 use std::thread_local;
 
 use softcore_rv64::prelude::bv;
-use softcore_rv64::raw::csr_name_map_backwards;
-use softcore_rv64::raw::{iop, rop};
 use softcore_rv64::registers as reg;
-use softcore_rv64::{Core, ast, config, new_core};
+use softcore_rv64::{Core, config, new_core};
 
 // Each thread gets its own copy of the core, this prevent tests using different threads inside a
 // same process to share the same core.
