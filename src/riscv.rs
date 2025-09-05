@@ -2,8 +2,8 @@ use crate::InstructionInfo;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use regex::Regex;
-use std::sync::LazyLock;
-use syn::Error;
+use std::{collections::HashMap, sync::LazyLock};
+use syn::{Error, Path};
 
 // ————————————————————————————— Helper Macros —————————————————————————————— //
 
@@ -35,7 +35,10 @@ macro_rules! itype {
 
 // ————————————————————————— Instruction to Tokens —————————————————————————— //
 
-pub fn emit_softcore_instr(instr: &InstructionInfo) -> Result<TokenStream, Error> {
+pub fn emit_softcore_instr(
+    instr: &InstructionInfo,
+    syms: &HashMap<String, Path>,
+) -> Result<TokenStream, Error> {
     let ops = &instr.operands;
     match instr.instr.as_str() {
         // CSR operations
@@ -91,10 +94,22 @@ pub fn emit_softcore_instr(instr: &InstructionInfo) -> Result<TokenStream, Error
 
         // Loads and Stores
         "li" => {
+            // Load immediate is a pseudo-instruction.
+            // Here we implement it in Rust directly, rather than as a combination of lui and addi.
             check_nb_op(instr, 2)?;
             let rd = emit_reg(&ops[0]);
             let value = emit_integer(&ops[1]);
-            Ok(quote! {core.set(#rd, #value as u64)})
+            Ok(quote! { core.set(#rd, #value as u64); })
+        }
+        "la" => {
+            // Load address is a pseudo-instruction, it relies on relocations to find the address
+            // of a symbol.
+            // We can't use the same trick here, because we don't want to rely on the linker for
+            // that. Instrad, we use Rust to find the address of the symbol directly.
+            check_nb_op(instr, 2)?;
+            let rd = emit_reg(&ops[0]);
+            let sym_addr = emit_symbol_addr(&ops[1], syms);
+            Ok(quote! { core.set(#rd, #sym_addr as u64); })
         }
         "ld" => {
             check_nb_op(instr, 2)?;
@@ -315,6 +330,18 @@ fn emit_immediate_offset(imm_off: &str) -> Result<(TokenStream, TokenStream), Er
     };
 
     Ok((emit_integer(imm.as_str()), emit_reg(reg.as_str())))
+}
+
+fn emit_symbol_addr(sym: &str, syms: &HashMap<String, Path>) -> TokenStream {
+    if let Some(path) = syms.get(sym) {
+        quote! {(&raw mut #path) as *mut _}
+    } else {
+        Error::new(
+            Span::call_site(),
+            format!("Could not find a symbol named '{sym}'"),
+        )
+        .to_compile_error()
+    }
 }
 
 // ————————————————————————————————— Tests —————————————————————————————————— //

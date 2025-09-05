@@ -3,15 +3,14 @@ use quote::quote;
 use regex::Regex;
 use std::collections::HashMap;
 use std::sync::LazyLock;
-use syn::{Expr, parse_macro_input};
+use syn::{Expr, Path, parse_macro_input};
 
-mod display;
 mod parser;
 mod riscv;
 
 use parser::{AsmInput, AsmOperand};
 
-use crate::parser::RegisterOperand;
+use crate::parser::{KindRegister, OperandKind, RegisterOperand};
 
 #[derive(Debug, Clone)]
 struct InstructionInfo {
@@ -30,6 +29,7 @@ struct RegAllocation {
 struct MultiInstructionAnalysis {
     instructions: Vec<InstructionInfo>,
     register_allocation: Vec<RegAllocation>,
+    symbols: HashMap<String, Path>,
 }
 
 fn parse_instruction(instr: &str) -> Option<InstructionInfo> {
@@ -65,36 +65,54 @@ fn parse_instructions(assembly_template: &[String]) -> Vec<InstructionInfo> {
 
 fn build_operand_register_map(
     operands: &[AsmOperand],
-) -> (Vec<RegAllocation>, HashMap<String, String>) {
+) -> (
+    Vec<RegAllocation>,
+    HashMap<String, String>,
+    HashMap<String, Path>,
+) {
     let mut register_allocation = Vec::new();
     let mut placeholder_instantiation = HashMap::new();
+    let mut symbols = HashMap::new();
     let mut reg_counter = 1;
 
     for operand in operands.iter() {
-        if let AsmOperand::Register(RegisterOperand {
-            ident: Some(ident),
-            reg: _, // TODO: check if the user specifies a register
-            expr,
-            is_input,
-            is_output,
-        }) = operand
-        {
-            // Pick the next available register
-            let register = format!("x{}", reg_counter);
-            let regalloc = RegAllocation {
-                register: register.clone(),
-                expr: expr.clone(),
-                is_input: *is_input,
-                is_output: *is_output,
+        if let AsmOperand::Register(RegisterOperand { ident, kind }) = operand {
+            let ident = if let Some(ident) = ident {
+                ident
+            } else {
+                todo!("Handle operands without identifiers")
             };
+            match kind {
+                OperandKind::Register(KindRegister {
+                    reg: _, // TODO: check if the user specifies a register
+                    expr,
+                    is_input,
+                    is_output,
+                }) => {
+                    // Pick the next available register
+                    let register = format!("x{}", reg_counter);
+                    let regalloc = RegAllocation {
+                        register: register.clone(),
+                        expr: expr.clone(),
+                        is_input: *is_input,
+                        is_output: *is_output,
+                    };
 
-            placeholder_instantiation.insert(ident.to_string(), register);
-            register_allocation.push(regalloc);
-            reg_counter += 1;
+                    placeholder_instantiation.insert(ident.to_string(), register);
+                    register_allocation.push(regalloc);
+                    reg_counter += 1;
+                }
+                OperandKind::Symbol { path } => {
+                    let ident = ident.to_string();
+                    let sym = format!("sym({})", ident);
+                    symbols.insert(sym.clone(), path.to_owned());
+                    placeholder_instantiation.insert(ident, sym);
+                }
+            }
         }
     }
 
-    (register_allocation, placeholder_instantiation)
+    (register_allocation, placeholder_instantiation, symbols)
 }
 
 fn analyze_multi_instructions(
@@ -104,7 +122,8 @@ fn analyze_multi_instructions(
     static RE: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"\{\s*([A-Za-z0-9_]+)\s*\}").unwrap());
 
-    let (register_allocation, placeholder_instantiation) = build_operand_register_map(operands);
+    let (register_allocation, placeholder_instantiation, symbols) =
+        build_operand_register_map(operands);
     let mut instructions = parse_instructions(assembly_template);
 
     // Replace all placeholder by the allocated register
@@ -116,6 +135,9 @@ fn analyze_multi_instructions(
                 let placeholder = caps.get(1).unwrap().as_str();
                 if let Some(reg) = placeholder_instantiation.get(placeholder) {
                     *op = op.replacen(substr, reg, 1);
+                } else if symbols.contains_key(placeholder) {
+                    eprintln!("### {placeholder}");
+                    *op = op.replacen(substr, &format!("sym({placeholder})"), 1);
                 }
             }
         }
@@ -124,10 +146,12 @@ fn analyze_multi_instructions(
     MultiInstructionAnalysis {
         instructions,
         register_allocation,
+        symbols,
     }
 }
 
 fn generate_softcore_code(analysis: &MultiInstructionAnalysis) -> proc_macro2::TokenStream {
+    let syms = &analysis.symbols;
     let mut setup_code = Vec::new();
     let mut instruction_code = Vec::new();
     let mut extract_code = Vec::new();
@@ -145,7 +169,7 @@ fn generate_softcore_code(analysis: &MultiInstructionAnalysis) -> proc_macro2::T
 
     // Generate instruction execution code using proper register mapping
     for instr in analysis.instructions.iter() {
-        let tokens = match riscv::emit_softcore_instr(instr) {
+        let tokens = match riscv::emit_softcore_instr(instr, syms) {
             Ok(tokens) => tokens,
             Err(err) => err.to_compile_error(),
         };

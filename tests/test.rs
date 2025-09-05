@@ -364,6 +364,28 @@ fn load_immediate() {
 }
 
 #[test]
+fn symbols() {
+    static mut MY_SYMBOL: u64 = 0;
+
+    unsafe {
+        let new_val: u64 = 0xcafe0bad0bed0;
+        let mut sym_addr = 0;
+
+        rasm!(
+            "la {sym_addr}, {my_sym}",
+            "sd {new_val}, 0({sym_addr})",
+            my_sym = sym MY_SYMBOL,
+            sym_addr = out(reg) sym_addr,
+            new_val = in(reg) new_val,
+        );
+
+        assert_eq!(sym_addr, (&raw mut MY_SYMBOL) as *const _ as u64);
+        let sym_val = core::ptr::read((&raw mut MY_SYMBOL) as *const u64);
+        assert_eq!(new_val, sym_val);
+    }
+}
+
+#[test]
 fn miralis_trap_detector() {
     use softcore_rv64::raw;
     const TRAP_ADDR: u64 = 0xffff00;
