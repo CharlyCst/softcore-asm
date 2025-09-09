@@ -334,7 +334,7 @@ fn emit_immediate_offset(imm_off: &str) -> Result<(TokenStream, TokenStream), Er
 
 fn emit_symbol_addr(sym: &str, syms: &HashMap<String, Path>) -> TokenStream {
     if let Some(path) = syms.get(sym) {
-        quote! {(&raw mut #path) as *mut _}
+        quote! {(&raw const #path) as *const _}
     } else {
         Error::new(
             Span::call_site(),
