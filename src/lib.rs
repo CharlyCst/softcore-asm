@@ -64,14 +64,14 @@ fn parse_instructions(assembly_template: &[String]) -> Vec<InstructionInfo> {
     instrs
 }
 
-fn build_operand_register_map(
-    operands: &[AsmOperand],
-) -> (
+struct OperandMappings(
     Vec<RegAllocation>,
     HashMap<String, String>,
     HashMap<String, Path>,
     HashMap<String, Expr>,
-) {
+);
+
+fn build_operand_register_map(operands: &[AsmOperand]) -> OperandMappings {
     let mut register_allocation = Vec::new();
     let mut placeholder_instantiation = HashMap::new();
     let mut symbols = HashMap::new();
@@ -121,7 +121,7 @@ fn build_operand_register_map(
         }
     }
 
-    (
+    OperandMappings(
         register_allocation,
         placeholder_instantiation,
         symbols,
@@ -136,7 +136,7 @@ fn analyze_multi_instructions(
     static RE: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"\{\s*([A-Za-z0-9_]+)\s*\}").unwrap());
 
-    let (register_allocation, placeholder_instantiation, symbols, consts) =
+    let OperandMappings(register_allocation, placeholder_instantiation, symbols, consts) =
         build_operand_register_map(operands);
     let mut instructions = parse_instructions(assembly_template);
 

@@ -3,7 +3,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use regex::Regex;
 use std::{collections::HashMap, sync::LazyLock};
-use syn::{Error, Expr, Ident, Path};
+use syn::{Error, Expr, Path};
 
 // ————————————————————————————— Helper Macros —————————————————————————————— //
 
