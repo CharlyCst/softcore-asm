@@ -230,7 +230,7 @@ pub fn rasm(input: TokenStream) -> TokenStream {
                 ast,
                 prelude::bv,
                 registers as reg,
-                raw::{iop, rop, csr_name_map_backwards},
+                raw::{iop, rop, csr_name_map_backwards, self},
             };
             #softcore_code
         }

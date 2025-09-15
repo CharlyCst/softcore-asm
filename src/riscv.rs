@@ -33,6 +33,19 @@ macro_rules! itype {
     }};
 }
 
+/// Emit the tokens for MUL type instructions
+macro_rules! mul {
+    ($instr: ident, $ops: ident, $op_bits: literal) => {{
+        check_nb_op($instr, 3)?;
+        let rd = emit_reg(&$ops[0]);
+        let rs1 = emit_reg(&$ops[1]);
+        let rs2 = emit_reg(&$ops[2]);
+        Ok(quote! {
+            core.execute(ast::MUL((#rs2, #rs1, #rd, raw::encdec_mul_op_backwards(bv::<3>($op_bits)))));
+        })
+    }};
+}
+
 // ————————————————————————— Instruction to Tokens —————————————————————————— //
 
 pub fn emit_softcore_instr(
@@ -212,6 +225,12 @@ pub fn emit_softcore_instr(
         "andi" => itype!(instr, ops, ANDI, consts),
         "ori" => itype!(instr, ops, ORI, consts),
         "xori" => itype!(instr, ops, XORI, consts),
+
+        // MUL
+        "mul" => mul!(instr, ops, 0b000),
+        "mulh" => mul!(instr, ops, 0b001),
+        "mulhsu" => mul!(instr, ops, 0b010),
+        "mulhu" => mul!(instr, ops, 0b011),
 
         // Unknown instructions
         _ => Err(Error::new(

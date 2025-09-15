@@ -323,6 +323,119 @@ fn itype() {
     assert_eq!(xor_result, x ^ 0xff);
 }
 
+#[test]
+fn mul() {
+    // Test basic multiplication
+    let x = 6u64;
+    let y = 7u64;
+    let mut result = 0u64;
+
+    rasm!(
+        "mul {result}, {x}, {y}",
+        x = in(reg) x,
+        y = in(reg) y,
+        result = out(reg) result
+    );
+    assert_eq!(result, x * y);
+
+    // Test multiplication with larger numbers
+    let x = 0x123456789abcdef0u64;
+    let y = 0x2u64;
+    let mut result = 0u64;
+
+    rasm!(
+        "mul {result}, {x}, {y}",
+        x = in(reg) x,
+        y = in(reg) y,
+        result = out(reg) result
+    );
+    assert_eq!(result, x.wrapping_mul(y));
+
+    // NOTE: the following tests are not yet supported, pending support for 128 bits bitvectors in
+    // softcore-rs
+
+    // // Test mulh (signed high multiplication)
+    // let x = -1i64 as u64;
+    // let y = -1i64 as u64;
+    // let mut result = 0u64;
+
+    // rasm!(
+    //     "mulh {result}, {x}, {y}",
+    //     x = in(reg) x,
+    //     y = in(reg) y,
+    //     result = out(reg) result
+    // );
+    // // (-1) * (-1) = 1, high part should be 0
+    // assert_eq!(result, 0);
+
+    // // Test mulh with large signed numbers
+    // let x = 0x7fffffffffffffffu64; // Large positive
+    // let y = 2u64;
+    // let mut result = 0u64;
+
+    // rasm!(
+    //     "mulh {result}, {x}, {y}",
+    //     x = in(reg) x,
+    //     y = in(reg) y,
+    //     result = out(reg) result
+    // );
+    // // Should get high 64 bits of the 128-bit result
+    // assert_eq!(result, 0);
+
+    // // Test mulhsu (signed * unsigned high multiplication)
+    // let x = -1i64 as u64; // All 1's as signed
+    // let y = 2u64; // Unsigned 2
+    // let mut result = 0u64;
+
+    // rasm!(
+    //     "mulhsu {result}, {x}, {y}",
+    //     x = in(reg) x,
+    //     y = in(reg) y,
+    //     result = out(reg) result
+    // );
+    // // -1 * 2 = -2, high part should be all 1's
+    // assert_eq!(result, 0xffffffffffffffffu64);
+
+    // // Test mulhu (unsigned high multiplication)
+    // let x = 0xffffffffffffffffu64;
+    // let y = 0xffffffffffffffffu64;
+    // let mut result = 0u64;
+
+    // rasm!(
+    //     "mulhu {result}, {x}, {y}",
+    //     x = in(reg) x,
+    //     y = in(reg) y,
+    //     result = out(reg) result
+    // );
+    // // Max unsigned * max unsigned, high part should be 0xfffffffffffffffe
+    // assert_eq!(result, 0xfffffffffffffffeu64);
+
+    // // Test edge case: multiplication by zero
+    // let x = 0x123456789abcdef0u64;
+    // let y = 0u64;
+    // let mut mul_result = 0u64;
+    // let mut mulh_result = 0u64;
+    // let mut mulhsu_result = 0u64;
+    // let mut mulhu_result = 0u64;
+
+    // rasm!(
+    //     "mul {mul_result}, {x}, {y}
+    //      mulh {mulh_result}, {x}, {y}
+    //      mulhsu {mulhsu_result}, {x}, {y}
+    //      mulhu {mulhu_result}, {x}, {y}",
+    //     x = in(reg) x,
+    //     y = in(reg) y,
+    //     mul_result = out(reg) mul_result,
+    //     mulh_result = out(reg) mulh_result,
+    //     mulhsu_result = out(reg) mulhsu_result,
+    //     mulhu_result = out(reg) mulhu_result
+    // );
+    // assert_eq!(mul_result, 0);
+    // assert_eq!(mulh_result, 0);
+    // assert_eq!(mulhsu_result, 0);
+    // assert_eq!(mulhu_result, 0);
+}
+
 // /// Testing mixed named and positional operand syntax.
 // #[test]
 // fn mixed_operands() {
