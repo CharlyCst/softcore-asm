@@ -436,30 +436,51 @@ fn mul() {
     // assert_eq!(mulhu_result, 0);
 }
 
-// /// Testing mixed named and positional operand syntax.
-// #[test]
-// fn mixed_operands() {
-//     let input_val = 42;
-//     let mut output_val = 0;
-//     let temp = 100;
+/// Testing mixed named and positional operand syntax.
+#[test]
+fn mixed_operands() {
+    let mut input_val = 42;
+    let mut output_val = 0;
 
-//     // Test 1: Mixed named and positional operands
-//     rasm!("add {result}, {}, {temp}",
-//           in(reg) input_val,          // Positional operand
-//           result = out(reg) output_val,  // Named operand
-//           temp = in(reg) temp); // Named operand
+    // rasm!("add {result}, {}, {temp}",
+    //       in(reg) input_val,          // Positional operand
+    //       result = out(reg) output_val,  // Named operand
+    //       temp = in(reg) temp); // Named operand
 
-//     // Test 2: Named operands with options
-//     rasm!("csrrw {old}, mstatus, {new}",
-//           old = out(reg) output_val,
-//           new = in(reg) input_val,
-//           options(nomem, nostack));
+    rasm!(
+        "csrw mscratch, {new}",
+        "csrr {old}, mscratch",
+        old = out(reg) output_val,
+        new = in(reg) input_val,
+        options(nomem, nostack)
+    );
+    assert_eq!(input_val, output_val);
 
-//     // Test 3: All positional
-//     rasm!("addi {}, {}, 10",
-//           out(reg) output_val,
-//           in(reg) input_val);
-// }
+    input_val += 1; // Change value
+    rasm!(
+        "csrw mscratch, {1}",
+        "csrr {0}, mscratch",
+        out(reg) output_val,
+        in(reg) input_val,
+        options(nomem, nostack)
+    );
+    assert_eq!(input_val, output_val);
+
+    input_val += 1; // Change value
+    rasm!(
+        "csrw mscratch, {0}",
+        "csrr {old}, mscratch",
+        old = out(reg) output_val,
+        in(reg) input_val,
+        options(nomem, nostack)
+    );
+    assert_eq!(input_val, output_val);
+
+    // // Test 3: All positional
+    // rasm!("addi {}, {}, 10",
+    //       out(reg) output_val,
+    //       in(reg) input_val);
+}
 
 #[test]
 fn load_immediate() {

@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 use syn::{Expr, Path, parse_macro_input};
 
-mod parser;
 mod asm_parser;
+mod parser;
 mod riscv;
 
 use parser::{AsmInput, AsmOperand};
@@ -78,23 +78,37 @@ fn build_operand_register_map(operands: &[AsmOperand]) -> OperandMappings {
     let mut symbols = HashMap::new();
     let mut consts = HashMap::new();
     let mut reg_counter = 1;
+    let mut ident_counter = 0;
 
     for operand in operands.iter() {
         if let AsmOperand::Register(RegisterOperand { ident, kind }) = operand {
-            let ident = if let Some(ident) = ident {
-                ident
-            } else {
-                todo!("Handle operands without identifiers")
-            };
             match kind {
                 OperandKind::Register(KindRegister {
-                    reg: _, // TODO: check if the user specifies a register
+                    reg,
                     expr,
                     is_input,
                     is_output,
                 }) => {
-                    // Pick the next available register
-                    let register = format!("x{}", reg_counter);
+                    let ident = if let Some(ident) = ident {
+                        ident.to_string()
+                    } else {
+                        // Anonymous registers are referenced by their index in the declaration
+                        // order
+                        let ident = format!("{}", ident_counter);
+                        ident_counter += 1;
+                        ident
+                    };
+                    let register = match reg {
+                        parser::RegisterKind::Ident(_ident) => {
+                            // TODO: each arch should check the ident to decide which register to
+                            // allocate. We use a simple temporary register allocator for now.
+                            let register = format!("x{}", reg_counter);
+                            reg_counter += 1;
+                            register
+                        }
+                        parser::RegisterKind::String(reg) => reg.clone(),
+                    };
+
                     let regalloc = RegAllocation {
                         register: register.clone(),
                         expr: expr.clone(),
@@ -104,16 +118,23 @@ fn build_operand_register_map(operands: &[AsmOperand]) -> OperandMappings {
 
                     placeholder_instantiation.insert(ident.to_string(), register);
                     register_allocation.push(regalloc);
-                    reg_counter += 1;
                 }
                 OperandKind::Symbol { path } => {
-                    let ident = ident.to_string();
+                    let ident = if let Some(ident) = ident {
+                        ident.to_string()
+                    } else {
+                        todo!("Handle operands without identifiers")
+                    };
                     let sym = format!("sym({})", ident);
                     symbols.insert(sym.clone(), path.to_owned());
                     placeholder_instantiation.insert(ident, sym);
                 }
                 OperandKind::Const(expr) => {
-                    let ident = ident.to_string();
+                    let ident = if let Some(ident) = ident {
+                        ident.to_string()
+                    } else {
+                        todo!("Handle operands without identifiers")
+                    };
                     let cst = format!("const({})", ident);
                     consts.insert(cst.clone(), expr.clone());
                     placeholder_instantiation.insert(ident, cst);

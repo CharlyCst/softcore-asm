@@ -2,7 +2,7 @@
 
 use quote::quote;
 use syn::{
-    Expr, Ident, LitStr, Path, Token,
+    Expr, Ident, Lit, LitStr, Path, Token,
     parse::{Parse, ParseStream, Result},
 };
 
@@ -37,10 +37,16 @@ pub enum OperandKind {
 #[derive(Clone)]
 pub struct KindRegister {
     #[allow(unused)]
-    pub reg: Ident,
+    pub reg: RegisterKind,
     pub expr: Expr,
     pub is_input: bool,
     pub is_output: bool,
+}
+
+#[derive(Clone)]
+pub enum RegisterKind {
+    Ident(Ident),
+    String(String),
 }
 
 pub enum Direction {
@@ -95,7 +101,19 @@ fn parse_operand_kind_register(direction: Direction, input: &ParseStream) -> Res
     };
     let content;
     syn::parenthesized!(content in input);
-    let reg = content.parse::<Ident>()?;
+    let reg = if content.peek(Ident) {
+        RegisterKind::Ident(content.parse::<Ident>()?)
+    } else if content.peek(Lit) {
+        let reg = content.parse::<Lit>()?;
+        match reg {
+            Lit::Str(lit_str) => RegisterKind::String(lit_str.value()),
+            _ => {
+                return Err(content.error("Expected a valid register"));
+            }
+        }
+    } else {
+        return Err(input.error("Invalid register name"));
+    };
     let expr = input.parse::<Expr>()?;
 
     Ok(OperandKind::Register(KindRegister {
