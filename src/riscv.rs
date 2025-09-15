@@ -300,7 +300,6 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
                 let val = core.get(#rs2);
                 let addr = core::ptr::with_exposed_provenance_mut::<u64>(
                     #imm.wrapping_add(core.get(#rs1)) as usize);
-                let addr = (#imm.wrapping_add(core.get(#rs1))) as usize as *mut u64;
                 core::ptr::write(addr, val as u64);
             })
         }
