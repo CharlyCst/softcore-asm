@@ -9,11 +9,11 @@ use syn::{Error, Expr, Path};
 
 /// Emit the tokens for an RTYPE instruction
 macro_rules! rtype {
-    ($instr: ident, $ops: ident, $op:path) => {{
+    ($instr: ident, $op:path) => {{
         check_nb_op($instr, 3)?;
-        let rd = emit_reg(&$ops[0]);
-        let rs1 = emit_reg(&$ops[1]);
-        let rs2 = emit_reg(&$ops[2]);
+        let rd = emit_reg(&$instr.operands[0]);
+        let rs1 = emit_reg(&$instr.operands[1]);
+        let rs2 = emit_reg(&$instr.operands[2]);
         Ok(quote! {
             core.execute(ast::RTYPE((#rs2, #rs1, #rd, rop::$op)));
         })
@@ -22,11 +22,11 @@ macro_rules! rtype {
 
 /// Emit the tokens for an ITYPE instruction
 macro_rules! itype {
-    ($instr: ident, $ops: ident, $op:path, $consts: ident) => {{
+    ($instr: ident, $op:path, $consts: ident) => {{
         check_nb_op($instr, 3)?;
-        let rd = emit_reg(&$ops[0]);
-        let rs1 = emit_reg(&$ops[1]);
-        let imm = emit_integer(&$ops[2], $consts);
+        let rd = emit_reg(&$instr.operands[0]);
+        let rs1 = emit_reg(&$instr.operands[1]);
+        let imm = emit_integer(&$instr.operands[2], $consts);
         Ok(quote! {
             core.execute(ast::ITYPE((bv(#imm), #rs1, #rd, iop::$op)));
         })
@@ -35,11 +35,11 @@ macro_rules! itype {
 
 /// Emit the tokens for MUL type instructions
 macro_rules! mul {
-    ($instr: ident, $ops: ident, $op_bits: literal) => {{
+    ($instr: ident, $op_bits: literal) => {{
         check_nb_op($instr, 3)?;
-        let rd = emit_reg(&$ops[0]);
-        let rs1 = emit_reg(&$ops[1]);
-        let rs2 = emit_reg(&$ops[2]);
+        let rd = emit_reg(&$instr.operands[0]);
+        let rs1 = emit_reg(&$instr.operands[1]);
+        let rs2 = emit_reg(&$instr.operands[2]);
         Ok(quote! {
             core.execute(ast::MUL((#rs2, #rs1, #rd, raw::encdec_mul_op_backwards(bv::<3>($op_bits)))));
         })
@@ -216,30 +216,41 @@ pub fn emit_softcore_instr(
         }
 
         // RType
-        "add" => rtype!(instr, ops, ADD),
-        "slt" => rtype!(instr, ops, SLT),
-        "sltu" => rtype!(instr, ops, SLTU),
-        "and" => rtype!(instr, ops, AND),
-        "or" => rtype!(instr, ops, OR),
-        "xor" => rtype!(instr, ops, XOR),
-        "sll" => rtype!(instr, ops, SLL),
-        "srl" => rtype!(instr, ops, SRL),
-        "sub" => rtype!(instr, ops, SUB),
-        "sra" => rtype!(instr, ops, SRA),
+        "add" => rtype!(instr, ADD),
+        "slt" => rtype!(instr, SLT),
+        "sltu" => rtype!(instr, SLTU),
+        "and" => rtype!(instr, AND),
+        "or" => rtype!(instr, OR),
+        "xor" => rtype!(instr, XOR),
+        "sll" => rtype!(instr, SLL),
+        "srl" => rtype!(instr, SRL),
+        "sub" => rtype!(instr, SUB),
+        "sra" => rtype!(instr, SRA),
 
         // IType
-        "addi" => itype!(instr, ops, ADDI, consts),
-        "slti" => itype!(instr, ops, SLTI, consts),
-        "sltiu" => itype!(instr, ops, SLTIU, consts),
-        "andi" => itype!(instr, ops, ANDI, consts),
-        "ori" => itype!(instr, ops, ORI, consts),
-        "xori" => itype!(instr, ops, XORI, consts),
+        "addi" => itype!(instr, ADDI, consts),
+        "slti" => itype!(instr, SLTI, consts),
+        "sltiu" => itype!(instr, SLTIU, consts),
+        "andi" => itype!(instr, ANDI, consts),
+        "ori" => itype!(instr, ORI, consts),
+        "xori" => itype!(instr, XORI, consts),
+        "mv" => {
+            // Expends into an ADDI
+            check_nb_op(instr, 2)?;
+            let mut operands = ops.clone();
+            operands.push("0".to_string());
+            let instr = &Instr {
+                mnemonic: "addi".to_string(),
+                operands,
+            };
+            itype!(instr, ADDI, consts)
+        }
 
         // MUL
-        "mul" => mul!(instr, ops, 0b000),
-        "mulh" => mul!(instr, ops, 0b001),
-        "mulhsu" => mul!(instr, ops, 0b010),
-        "mulhu" => mul!(instr, ops, 0b011),
+        "mul" => mul!(instr, 0b000),
+        "mulh" => mul!(instr, 0b001),
+        "mulhsu" => mul!(instr, 0b010),
+        "mulhu" => mul!(instr, 0b011),
 
         // System
         "mret" => {
@@ -280,7 +291,11 @@ fn check_nb_op(instr: &Instr, n: usize) -> Result<(), Error> {
         let s = if n > 1 { "s" } else { "" };
         Err(Error::new(
             Span::call_site(),
-            format!("Expected {n} operand{s}, got {m}"),
+            format!(
+                "Expected {n} operand{s}, got {m}: {} {:?}",
+                instr.mnemonic,
+                instr.operands.as_slice()
+            ),
         ))
     }
 }
