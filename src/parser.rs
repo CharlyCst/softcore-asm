@@ -31,6 +31,7 @@ pub struct RegisterOperand {
 pub enum OperandKind {
     Register(KindRegister),
     Symbol { path: Path },
+    Const(Expr),
 }
 
 #[derive(Clone)]
@@ -67,6 +68,9 @@ impl Parse for RegisterOperand {
         let kind = if input.peek(Token![in]) {
             input.parse::<Token![in]>()?;
             parse_operand_kind_register(Direction::In, &input)?
+        } else if input.peek(Token![const]) {
+            input.parse::<Token![const]>()?;
+            parse_operand_kind_const(&input)?
         } else if input.peek(Ident) {
             let ident = input.parse::<Ident>()?;
             match ident.to_string().as_str() {
@@ -105,6 +109,11 @@ fn parse_operand_kind_register(direction: Direction, input: &ParseStream) -> Res
 fn parse_operand_kind_symbol(input: &ParseStream) -> Result<OperandKind> {
     let path = input.parse::<Path>()?;
     Ok(OperandKind::Symbol { path })
+}
+
+fn parse_operand_kind_const(input: &ParseStream) -> Result<OperandKind> {
+    let expr = input.parse::<Expr>()?;
+    Ok(OperandKind::Const(expr))
 }
 
 impl Parse for AsmOperand {

@@ -30,6 +30,7 @@ struct MultiInstructionAnalysis {
     instructions: Vec<InstructionInfo>,
     register_allocation: Vec<RegAllocation>,
     symbols: HashMap<String, Path>,
+    consts: HashMap<String, Expr>,
 }
 
 fn parse_instruction(instr: &str) -> Option<InstructionInfo> {
@@ -69,10 +70,12 @@ fn build_operand_register_map(
     Vec<RegAllocation>,
     HashMap<String, String>,
     HashMap<String, Path>,
+    HashMap<String, Expr>,
 ) {
     let mut register_allocation = Vec::new();
     let mut placeholder_instantiation = HashMap::new();
     let mut symbols = HashMap::new();
+    let mut consts = HashMap::new();
     let mut reg_counter = 1;
 
     for operand in operands.iter() {
@@ -108,11 +111,22 @@ fn build_operand_register_map(
                     symbols.insert(sym.clone(), path.to_owned());
                     placeholder_instantiation.insert(ident, sym);
                 }
+                OperandKind::Const(expr) => {
+                    let ident = ident.to_string();
+                    let cst = format!("const({})", ident);
+                    consts.insert(cst.clone(), expr.clone());
+                    placeholder_instantiation.insert(ident, cst);
+                }
             }
         }
     }
 
-    (register_allocation, placeholder_instantiation, symbols)
+    (
+        register_allocation,
+        placeholder_instantiation,
+        symbols,
+        consts,
+    )
 }
 
 fn analyze_multi_instructions(
@@ -122,7 +136,7 @@ fn analyze_multi_instructions(
     static RE: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"\{\s*([A-Za-z0-9_]+)\s*\}").unwrap());
 
-    let (register_allocation, placeholder_instantiation, symbols) =
+    let (register_allocation, placeholder_instantiation, symbols, consts) =
         build_operand_register_map(operands);
     let mut instructions = parse_instructions(assembly_template);
 
@@ -135,9 +149,6 @@ fn analyze_multi_instructions(
                 let placeholder = caps.get(1).unwrap().as_str();
                 if let Some(reg) = placeholder_instantiation.get(placeholder) {
                     *op = op.replacen(substr, reg, 1);
-                } else if symbols.contains_key(placeholder) {
-                    eprintln!("### {placeholder}");
-                    *op = op.replacen(substr, &format!("sym({placeholder})"), 1);
                 }
             }
         }
@@ -147,11 +158,13 @@ fn analyze_multi_instructions(
         instructions,
         register_allocation,
         symbols,
+        consts,
     }
 }
 
 fn generate_softcore_code(analysis: &MultiInstructionAnalysis) -> proc_macro2::TokenStream {
     let syms = &analysis.symbols;
+    let consts = &analysis.consts;
     let mut setup_code = Vec::new();
     let mut instruction_code = Vec::new();
     let mut extract_code = Vec::new();
@@ -169,7 +182,7 @@ fn generate_softcore_code(analysis: &MultiInstructionAnalysis) -> proc_macro2::T
 
     // Generate instruction execution code using proper register mapping
     for instr in analysis.instructions.iter() {
-        let tokens = match riscv::emit_softcore_instr(instr, syms) {
+        let tokens = match riscv::emit_softcore_instr(instr, syms, consts) {
             Ok(tokens) => tokens,
             Err(err) => err.to_compile_error(),
         };

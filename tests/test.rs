@@ -384,6 +384,20 @@ fn symbols() {
 }
 
 #[test]
+fn consts() {
+    let value: u64 = 42;
+    let mut out: u64 = 0;
+
+    rasm!(
+        "li {out}, {value_size}",
+        out = out(reg) out,
+        value_size = const core::mem::size_of_val(&value),
+    );
+
+    assert_eq!(out, core::mem::size_of::<u64>() as u64)
+}
+
+#[test]
 fn miralis_trap_detector() {
     use softcore_rv64::raw;
     const TRAP_ADDR: u64 = 0xffff00;

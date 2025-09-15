@@ -3,7 +3,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use regex::Regex;
 use std::{collections::HashMap, sync::LazyLock};
-use syn::{Error, Path};
+use syn::{Error, Expr, Ident, Path};
 
 // ————————————————————————————— Helper Macros —————————————————————————————— //
 
@@ -22,11 +22,11 @@ macro_rules! rtype {
 
 /// Emit the tokens for an ITYPE instruction
 macro_rules! itype {
-    ($instr: ident, $ops: ident, $op:path) => {{
+    ($instr: ident, $ops: ident, $op:path, $consts: ident) => {{
         check_nb_op($instr, 3)?;
         let rd = emit_reg(&$ops[0]);
         let rs1 = emit_reg(&$ops[1]);
-        let imm = emit_integer(&$ops[2]);
+        let imm = emit_integer(&$ops[2], $consts);
         Ok(quote! {
             core.execute(ast::ITYPE((bv(#imm), #rs1, #rd, iop::$op)));
         })
@@ -38,6 +38,7 @@ macro_rules! itype {
 pub fn emit_softcore_instr(
     instr: &InstructionInfo,
     syms: &HashMap<String, Path>,
+    consts: &HashMap<String, Expr>,
 ) -> Result<TokenStream, Error> {
     let ops = &instr.operands;
     match instr.instr.as_str() {
@@ -98,7 +99,7 @@ pub fn emit_softcore_instr(
             // Here we implement it in Rust directly, rather than as a combination of lui and addi.
             check_nb_op(instr, 2)?;
             let rd = emit_reg(&ops[0]);
-            let value = emit_integer(&ops[1]);
+            let value = emit_integer(&ops[1], consts);
             Ok(quote! { core.set(#rd, #value as u64); })
         }
         "la" => {
@@ -114,7 +115,7 @@ pub fn emit_softcore_instr(
         "ld" => {
             check_nb_op(instr, 2)?;
             let rd = emit_reg(&ops[0]);
-            let (imm, rs1) = emit_immediate_offset(&ops[1])?;
+            let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(quote! {
                 let addr = (#imm.wrapping_add(core.get(#rs1))) as usize as *const u64;
                 let val = core::ptr::read(addr);
@@ -124,7 +125,7 @@ pub fn emit_softcore_instr(
         "lwu" => {
             check_nb_op(instr, 2)?;
             let rd = emit_reg(&ops[0]);
-            let (imm, rs1) = emit_immediate_offset(&ops[1])?;
+            let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(quote! {
                 let addr = (#imm.wrapping_add(core.get(#rs1))) as usize as *const u32;
                 let val = core::ptr::read(addr);
@@ -134,7 +135,7 @@ pub fn emit_softcore_instr(
         "lhu" => {
             check_nb_op(instr, 2)?;
             let rd = emit_reg(&ops[0]);
-            let (imm, rs1) = emit_immediate_offset(&ops[1])?;
+            let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(quote! {
                 let addr = (#imm.wrapping_add(core.get(#rs1))) as usize as *const u32;
                 let val = core::ptr::read(addr);
@@ -144,7 +145,7 @@ pub fn emit_softcore_instr(
         "lbu" => {
             check_nb_op(instr, 2)?;
             let rd = emit_reg(&ops[0]);
-            let (imm, rs1) = emit_immediate_offset(&ops[1])?;
+            let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(quote! {
                 let addr = (#imm.wrapping_add(core.get(#rs1))) as usize as *const u32;
                 let val = core::ptr::read(addr);
@@ -154,7 +155,7 @@ pub fn emit_softcore_instr(
         "sd" => {
             check_nb_op(instr, 2)?;
             let rs2 = emit_reg(&ops[0]);
-            let (imm, rs1) = emit_immediate_offset(&ops[1])?;
+            let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(quote! {
                 let val = core.get(#rs2);
                 let addr = (#imm.wrapping_add(core.get(#rs1))) as usize as *mut u64;
@@ -164,7 +165,7 @@ pub fn emit_softcore_instr(
         "sw" => {
             check_nb_op(instr, 2)?;
             let rs2 = emit_reg(&ops[0]);
-            let (imm, rs1) = emit_immediate_offset(&ops[1])?;
+            let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(quote! {
                 let val = core.get(#rs2);
                 let addr = (#imm.wrapping_add(core.get(#rs1))) as usize as *mut u32;
@@ -174,7 +175,7 @@ pub fn emit_softcore_instr(
         "sh" => {
             check_nb_op(instr, 2)?;
             let rs2 = emit_reg(&ops[0]);
-            let (imm, rs1) = emit_immediate_offset(&ops[1])?;
+            let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(quote! {
                 let val = core.get(#rs2);
                 let addr = (#imm.wrapping_add(core.get(#rs1))) as usize as *mut u16;
@@ -184,7 +185,7 @@ pub fn emit_softcore_instr(
         "sb" => {
             check_nb_op(instr, 2)?;
             let rs2 = emit_reg(&ops[0]);
-            let (imm, rs1) = emit_immediate_offset(&ops[1])?;
+            let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(quote! {
                 let val = core.get(#rs2);
                 let addr = (#imm.wrapping_add(core.get(#rs1))) as usize as *mut u8;
@@ -205,12 +206,12 @@ pub fn emit_softcore_instr(
         "sra" => rtype!(instr, ops, SRA),
 
         // IType
-        "addi" => itype!(instr, ops, ADDI),
-        "slti" => itype!(instr, ops, SLTI),
-        "sltiu" => itype!(instr, ops, SLTIU),
-        "andi" => itype!(instr, ops, ANDI),
-        "ori" => itype!(instr, ops, ORI),
-        "xori" => itype!(instr, ops, XORI),
+        "addi" => itype!(instr, ops, ADDI, consts),
+        "slti" => itype!(instr, ops, SLTI, consts),
+        "sltiu" => itype!(instr, ops, SLTIU, consts),
+        "andi" => itype!(instr, ops, ANDI, consts),
+        "ori" => itype!(instr, ops, ORI, consts),
+        "xori" => itype!(instr, ops, XORI, consts),
 
         // Unknown instructions
         _ => Err(Error::new(
@@ -283,11 +284,19 @@ fn emit_csr(csr: &str) -> TokenStream {
 /// All integers are encoded as u64, this means that negative numbers are represented as 2's
 /// complements. It is still possible to add two u64 as if they were signed using
 /// `.wrapping_add()`, but care must be taken in case a negative integer is required.
-fn emit_integer(n: &str) -> TokenStream {
-    static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(-)?(0x)?([0-9A-Fa-f]+)").unwrap());
+fn emit_integer(n: &str, consts: &HashMap<String, Expr>) -> TokenStream {
+    static RE_INT: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^(-)?(0x)?([0-9A-Fa-f]+)").unwrap());
+    static RE_CONST: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"const\((.*)\)").unwrap());
 
-    // Seach for a match
-    let Some(caps) = RE.captures(n) else {
+    // Check for a constant expression first
+    if let Some(cst) = RE_CONST.captures(n) {
+        let cst = cst.get(0).unwrap();
+        return emit_constant(cst.as_str(), consts);
+    }
+
+    // Otherwise search for integers
+    let Some(caps) = RE_INT.captures(n) else {
         return Error::new(Span::call_site(), format!("Invalid integer: '{n}'")).to_compile_error();
     };
 
@@ -309,7 +318,10 @@ fn emit_integer(n: &str) -> TokenStream {
 }
 
 /// Parse operands of the shape `imm(reg)`, as used in loads and stores.
-fn emit_immediate_offset(imm_off: &str) -> Result<(TokenStream, TokenStream), Error> {
+fn emit_immediate_offset(
+    imm_off: &str,
+    consts: &HashMap<String, Expr>,
+) -> Result<(TokenStream, TokenStream), Error> {
     static RE: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"^(-?(0x)?[0-9A-Fa-f]+)\(([A-Za-z0-9]+)\)").unwrap());
 
@@ -329,7 +341,7 @@ fn emit_immediate_offset(imm_off: &str) -> Result<(TokenStream, TokenStream), Er
         ));
     };
 
-    Ok((emit_integer(imm.as_str()), emit_reg(reg.as_str())))
+    Ok((emit_integer(imm.as_str(), consts), emit_reg(reg.as_str())))
 }
 
 fn emit_symbol_addr(sym: &str, syms: &HashMap<String, Path>) -> TokenStream {
@@ -344,6 +356,18 @@ fn emit_symbol_addr(sym: &str, syms: &HashMap<String, Path>) -> TokenStream {
     }
 }
 
+fn emit_constant(cst: &str, consts: &HashMap<String, Expr>) -> TokenStream {
+    if let Some(cst) = consts.get(cst) {
+        quote! { #cst }
+    } else {
+        Error::new(
+            Span::call_site(),
+            format!("Could not find a constant named '{cst}'"),
+        )
+        .to_compile_error()
+    }
+}
+
 // ————————————————————————————————— Tests —————————————————————————————————— //
 
 #[cfg(test)]
@@ -352,95 +376,99 @@ mod tests {
 
     #[test]
     fn test_emit_integer() {
+        let consts = HashMap::new();
+
         // Test positive decimal
-        let result = emit_integer("123");
+        let result = emit_integer("123", &consts);
         assert_eq!(result.to_string(), "123u64");
 
         // Test negative decimal
-        let result = emit_integer("-456");
+        let result = emit_integer("-456", &consts);
         assert_eq!(result.to_string(), "18446744073709551160u64");
 
         // Test zero
-        let result = emit_integer("0");
+        let result = emit_integer("0", &consts);
         assert_eq!(result.to_string(), "0u64");
 
         // Test positive hexadecimal
-        let result = emit_integer("0x10");
+        let result = emit_integer("0x10", &consts);
         assert_eq!(result.to_string(), "16u64");
 
         // Test negative hexadecimal
-        let result = emit_integer("-0xFF");
+        let result = emit_integer("-0xFF", &consts);
         assert_eq!(result.to_string(), "18446744073709551361u64");
 
         // Test hexadecimal with mixed case
-        let result = emit_integer("0xAbC");
+        let result = emit_integer("0xAbC", &consts);
         assert_eq!(result.to_string(), "2748u64");
 
         // Test negative zero
-        let result = emit_integer("-0");
+        let result = emit_integer("-0", &consts);
         assert_eq!(result.to_string(), "0u64");
 
         // Test large hexadecimal value
-        let result = emit_integer("0x1234");
+        let result = emit_integer("0x1234", &consts);
         assert_eq!(result.to_string(), "4660u64");
 
         // Test negative large hexadecimal
-        let result = emit_integer("-0x1000");
+        let result = emit_integer("-0x1000", &consts);
         assert_eq!(result.to_string(), "18446744073709547520u64");
 
         // Test single digit hex
-        let result = emit_integer("0x5");
+        let result = emit_integer("0x5", &consts);
         assert_eq!(result.to_string(), "5u64");
     }
 
     #[test]
     fn immediate_offset() {
+        let consts = HashMap::new();
+
         // Test valid decimal immediate with register
-        let result = emit_immediate_offset("123(x1)").unwrap();
+        let result = emit_immediate_offset("123(x1)", &consts).unwrap();
         assert_eq!(result.0.to_string(), "123u64");
         assert_eq!(result.1.to_string(), "reg :: X1");
 
         // Test valid negative decimal immediate
-        let result = emit_immediate_offset("-456(sp)").unwrap();
+        let result = emit_immediate_offset("-456(sp)", &consts).unwrap();
         assert_eq!(result.0.to_string(), "18446744073709551160u64");
         assert_eq!(result.1.to_string(), "reg :: X2");
 
         // Test valid hexadecimal immediate
-        let result = emit_immediate_offset("0x10(a0)").unwrap();
+        let result = emit_immediate_offset("0x10(a0)", &consts).unwrap();
         assert_eq!(result.0.to_string(), "16u64");
         assert_eq!(result.1.to_string(), "reg :: X10");
 
         // Test valid negative hexadecimal immediate
-        let result = emit_immediate_offset("-0xFF(t0)").unwrap();
+        let result = emit_immediate_offset("-0xFF(t0)", &consts).unwrap();
         assert_eq!(result.0.to_string(), "18446744073709551361u64");
         assert_eq!(result.1.to_string(), "reg :: X5");
 
         // Test zero immediate
-        let result = emit_immediate_offset("0(zero)").unwrap();
+        let result = emit_immediate_offset("0(zero)", &consts).unwrap();
         assert_eq!(result.0.to_string(), "0u64");
         assert_eq!(result.1.to_string(), "reg :: X0");
 
         // Test register aliases
-        let result = emit_immediate_offset("8(fp)").unwrap();
+        let result = emit_immediate_offset("8(fp)", &consts).unwrap();
         assert_eq!(result.0.to_string(), "8u64");
         assert_eq!(result.1.to_string(), "reg :: X8");
 
         // Test invalid formats - missing parentheses
-        assert!(emit_immediate_offset("123x1").is_err());
+        assert!(emit_immediate_offset("123x1", &consts).is_err());
 
         // Test invalid formats - missing immediate
-        assert!(emit_immediate_offset("(x1)").is_err());
+        assert!(emit_immediate_offset("(x1)", &consts).is_err());
 
         // Test invalid formats - missing register
-        assert!(emit_immediate_offset("123()").is_err());
+        assert!(emit_immediate_offset("123()", &consts).is_err());
 
         // Test invalid formats - no closing parenthesis
-        assert!(emit_immediate_offset("123(x1").is_err());
+        assert!(emit_immediate_offset("123(x1", &consts).is_err());
 
         // Test invalid immediate value
-        assert!(emit_immediate_offset("invalid(x1)").is_err());
+        assert!(emit_immediate_offset("invalid(x1)", &consts).is_err());
 
         // Test invalid register
-        assert!(emit_immediate_offset("123(invalid_reg)").is_err());
+        assert!(emit_immediate_offset("123(invalid_reg)", &consts).is_err());
     }
 }
