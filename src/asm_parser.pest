@@ -1,0 +1,21 @@
+//! Assembly Parser Grammar
+//!
+//! This file defines the the gammar to parse some assembly snippets, using the
+//! [Pest](https://pest.rs/) PEG parser generator.
+
+// Punctuation and parenthesis
+l_par = _{ "(" }
+r_par = _{ ")" }
+
+// Operators
+add = { "+" }
+sub = { "-" }
+mul = { "*" }
+div = { "/" }
+
+// Numerical expressions
+number = @{ ASCII_DIGIT+ }
+binop  = _{ add | sub | mul | div }
+atom   = _{ number | l_par ~ expr ~ r_par }
+expr   =  { atom ~ ( binop ~ atom )* }
+

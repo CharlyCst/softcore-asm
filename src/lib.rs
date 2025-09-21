@@ -6,6 +6,7 @@ use std::sync::LazyLock;
 use syn::{Expr, Path, parse_macro_input};
 
 mod parser;
+mod asm_parser;
 mod riscv;
 
 use parser::{AsmInput, AsmOperand};
