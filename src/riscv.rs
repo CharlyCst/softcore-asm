@@ -130,7 +130,8 @@ pub fn emit_softcore_instr(
             let rd = emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(quote! {
-                let addr = (#imm.wrapping_add(core.get(#rs1))) as usize as *const u64;
+                let addr = core::ptr::with_exposed_provenance::<u64>(
+                    #imm.wrapping_add(core.get(#rs1)) as usize);
                 let val = core::ptr::read(addr);
                 core.set(#rd, val as u64);
             })
@@ -140,7 +141,8 @@ pub fn emit_softcore_instr(
             let rd = emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(quote! {
-                let addr = (#imm.wrapping_add(core.get(#rs1))) as usize as *const u32;
+                let addr = core::ptr::with_exposed_provenance::<u32>(
+                    #imm.wrapping_add(core.get(#rs1)) as usize);
                 let val = core::ptr::read(addr);
                 core.set(#rd, val as u64);
             })
@@ -150,7 +152,8 @@ pub fn emit_softcore_instr(
             let rd = emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(quote! {
-                let addr = (#imm.wrapping_add(core.get(#rs1))) as usize as *const u32;
+                let addr = core::ptr::with_exposed_provenance::<u16>(
+                    #imm.wrapping_add(core.get(#rs1)) as usize);
                 let val = core::ptr::read(addr);
                 core.set(#rd, val as u64);
             })
@@ -160,7 +163,8 @@ pub fn emit_softcore_instr(
             let rd = emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(quote! {
-                let addr = (#imm.wrapping_add(core.get(#rs1))) as usize as *const u32;
+                let addr = core::ptr::with_exposed_provenance::<u8>(
+                    #imm.wrapping_add(core.get(#rs1)) as usize);
                 let val = core::ptr::read(addr);
                 core.set(#rd, val as u64);
             })
@@ -171,6 +175,8 @@ pub fn emit_softcore_instr(
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(quote! {
                 let val = core.get(#rs2);
+                let addr = core::ptr::with_exposed_provenance_mut::<u64>(
+                    #imm.wrapping_add(core.get(#rs1)) as usize);
                 let addr = (#imm.wrapping_add(core.get(#rs1))) as usize as *mut u64;
                 core::ptr::write(addr, val as u64);
             })
@@ -181,7 +187,8 @@ pub fn emit_softcore_instr(
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(quote! {
                 let val = core.get(#rs2);
-                let addr = (#imm.wrapping_add(core.get(#rs1))) as usize as *mut u32;
+                let addr = core::ptr::with_exposed_provenance_mut::<u32>(
+                    #imm.wrapping_add(core.get(#rs1)) as usize);
                 core::ptr::write(addr, val as u32);
             })
         }
@@ -191,7 +198,8 @@ pub fn emit_softcore_instr(
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(quote! {
                 let val = core.get(#rs2);
-                let addr = (#imm.wrapping_add(core.get(#rs1))) as usize as *mut u16;
+                let addr = core::ptr::with_exposed_provenance_mut::<u16>(
+                    #imm.wrapping_add(core.get(#rs1)) as usize);
                 core::ptr::write(addr, val as u16);
             })
         }
@@ -201,7 +209,8 @@ pub fn emit_softcore_instr(
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(quote! {
                 let val = core.get(#rs2);
-                let addr = (#imm.wrapping_add(core.get(#rs1))) as usize as *mut u8;
+                let addr = core::ptr::with_exposed_provenance_mut::<u8>(
+                    #imm.wrapping_add(core.get(#rs1)) as usize);
                 core::ptr::write(addr, val as u8);
             })
         }
