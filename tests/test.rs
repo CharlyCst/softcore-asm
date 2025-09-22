@@ -64,7 +64,7 @@ fn load() {
     unsafe {
         // Double words
         let mut vals: [u64; 3] = [0xbeef00beef, 0x0badbed00badbed0, 0x0123456789abcdef];
-        let vals_addr = vals.as_mut_ptr().offset(1);
+        let vals_addr = vals.as_mut_ptr().offset(1) as usize;
         let mut val0: u64 = 0;
         let mut val1: u64 = 0;
         let mut val2: u64 = 0;
@@ -76,7 +76,7 @@ fn load() {
             val0 = out(reg) val0,
             val1 = out(reg) val1,
             val2 = out(reg) val2,
-            addr = in(reg) vals_addr as u64
+            addr = in(reg) vals_addr
         );
 
         assert_eq!(vals[0], val0);
@@ -85,7 +85,7 @@ fn load() {
 
         // Words
         let mut vals: [u32; 3] = [0xbeef0000, 0x0badbed0, 0x01234567];
-        let vals_addr = vals.as_mut_ptr().offset(1);
+        let vals_addr = vals.as_mut_ptr().offset(1) as usize;
         let mut val0: u64 = 0;
         let mut val1: u64 = 0;
         let mut val2: u64 = 0;
@@ -97,7 +97,7 @@ fn load() {
             val0 = out(reg) val0,
             val1 = out(reg) val1,
             val2 = out(reg) val2,
-            addr = in(reg) vals_addr as u64
+            addr = in(reg) vals_addr
         );
 
         assert_eq!(vals[0], val0 as u32);
@@ -106,7 +106,7 @@ fn load() {
 
         // Half words
         let mut vals: [u16; 3] = [0xbeef, 0x0bad, 0x0123];
-        let vals_addr = vals.as_mut_ptr().offset(1);
+        let vals_addr = vals.as_mut_ptr().offset(1) as usize;
         let mut val0: u64 = 0;
         let mut val1: u64 = 0;
         let mut val2: u64 = 0;
@@ -118,7 +118,7 @@ fn load() {
             val0 = out(reg) val0,
             val1 = out(reg) val1,
             val2 = out(reg) val2,
-            addr = in(reg) vals_addr as u64
+            addr = in(reg) vals_addr
         );
 
         assert_eq!(vals[0], val0 as u16);
@@ -127,7 +127,7 @@ fn load() {
 
         // Bytes
         let mut vals: [u8; 3] = [0xbe, 0x0b, 0x01];
-        let vals_addr = vals.as_mut_ptr().offset(1);
+        let vals_addr = vals.as_mut_ptr().offset(1) as usize;
         let mut val0: u64 = 0;
         let mut val1: u64 = 0;
         let mut val2: u64 = 0;
@@ -139,7 +139,7 @@ fn load() {
             val0 = out(reg) val0,
             val1 = out(reg) val1,
             val2 = out(reg) val2,
-            addr = in(reg) vals_addr as u64
+            addr = in(reg) vals_addr
         );
 
         assert_eq!(vals[0], val0 as u8);
@@ -157,7 +157,7 @@ fn store() {
     unsafe {
         // Double words
         let mut vals = [0u64; 3];
-        let vals_addr = vals.as_mut_ptr().offset(1);
+        let vals_addr = vals.as_mut_ptr().offset(1) as u64;
         let val0: u64 = 0xbeef00beef;
         let val1: u64 = 0x0badbed00badbed0;
         let val2: u64 = 0x0123456789abcdef;
@@ -169,7 +169,7 @@ fn store() {
             val0 = in(reg) val0,
             val1 = in(reg) val1,
             val2 = in(reg) val2,
-            addr = in(reg) vals_addr as u64
+            addr = in(reg) vals_addr
         );
 
         assert_eq!(vals[0], val0);
@@ -178,7 +178,7 @@ fn store() {
 
         // Words
         let mut vals = [0u32; 3];
-        let vals_addr = vals.as_mut_ptr().offset(1);
+        let vals_addr = vals.as_mut_ptr().offset(1) as u64;
         let val0: u32 = 0xbeef0000;
         let val1: u32 = 0x0badbed0;
         let val2: u32 = 0x01234567;
@@ -190,7 +190,7 @@ fn store() {
             val0 = in(reg) val0 as u64,
             val1 = in(reg) val1 as u64,
             val2 = in(reg) val2 as u64,
-            addr = in(reg) vals_addr as u64
+            addr = in(reg) vals_addr
         );
 
         assert_eq!(vals[0], val0);
@@ -199,7 +199,7 @@ fn store() {
 
         // Half words
         let mut vals = [0u16; 3];
-        let vals_addr = vals.as_mut_ptr().offset(1);
+        let vals_addr = vals.as_mut_ptr().offset(1) as u64;
         let val0: u16 = 0xbeef;
         let val1: u16 = 0x0bad;
         let val2: u16 = 0x0123;
@@ -211,7 +211,7 @@ fn store() {
             val0 = in(reg) val0 as u64,
             val1 = in(reg) val1 as u64,
             val2 = in(reg) val2 as u64,
-            addr = in(reg) vals_addr as u64
+            addr = in(reg) vals_addr
         );
 
         assert_eq!(vals[0], val0);
@@ -220,7 +220,7 @@ fn store() {
 
         // Bytes
         let mut vals = [0u8; 3];
-        let vals_addr = vals.as_mut_ptr().offset(1);
+        let vals_addr = vals.as_mut_ptr().offset(1) as u64;
         let val0: u8 = 0xbe;
         let val1: u8 = 0x0b;
         let val2: u8 = 0x01;
@@ -232,7 +232,7 @@ fn store() {
             val0 = in(reg) val0 as u64,
             val1 = in(reg) val1 as u64,
             val2 = in(reg) val2 as u64,
-            addr = in(reg) vals_addr as u64
+            addr = in(reg) vals_addr
         );
 
         assert_eq!(vals[0], val0);
