@@ -3,6 +3,8 @@
 //! This file defines the the gammar to parse some assembly snippets, using the
 //! [Pest](https://pest.rs/) PEG parser generator.
 
+WHITESPACE = _{ " " }
+
 // Punctuation and parenthesis
 l_par = _{ "(" }
 r_par = _{ ")" }
@@ -14,8 +16,16 @@ mul = { "*" }
 div = { "/" }
 
 // Numerical expressions
-number = @{ ASCII_DIGIT+ }
-binop  = _{ add | sub | mul | div }
-atom   = _{ number | l_par ~ expr ~ r_par }
-expr   =  { atom ~ ( binop ~ atom )* }
+var         = @{ (ASCII_ALPHANUMERIC | "_")+ }
+hex_number  = @{ "0x" ~ ASCII_HEX_DIGIT+ }
+number      = @{ ASCII_DIGIT+ }
+unary_minus =  { "-" }
+constant    = @{ "const(" ~ var ~ ")" }
+binop       = _{ add | sub | mul | div }
+primary     = _{ hex_number | number | constant | l_par ~ expr ~ r_par }
+atom        = _{ unary_minus? ~ primary }
+expr        =  { atom ~ ( binop ~ atom )* }
 
+// Assembly constructs
+any_reg = @{ (ASCII_ALPHANUMERIC | "_" | "{" | "}" )+ }
+imm_off =  { expr ~ l_par ~ any_reg ~ r_par }

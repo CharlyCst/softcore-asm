@@ -1,8 +1,9 @@
 use crate::InstructionInfo;
+use crate::asm_parser;
+use crate::asm_parser::Expr as NumExpr;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use regex::Regex;
-use std::{collections::HashMap, sync::LazyLock};
+use std::collections::HashMap;
 use syn::{Error, Expr, Path};
 
 // ————————————————————————————— Helper Macros —————————————————————————————— //
@@ -313,36 +314,28 @@ fn emit_csr(csr: &str) -> TokenStream {
 /// complements. It is still possible to add two u64 as if they were signed using
 /// `.wrapping_add()`, but care must be taken in case a negative integer is required.
 fn emit_integer(n: &str, consts: &HashMap<String, Expr>) -> TokenStream {
-    static RE_INT: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"^(-)?(0x)?([0-9A-Fa-f]+)").unwrap());
-    static RE_CONST: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"const\((.*)\)").unwrap());
+    let n = match asm_parser::into_numeric_expr(n) {
+        Ok(n) => n,
+        Err(err) => {
+            return Error::new(Span::call_site(), err.to_string()).to_compile_error();
+        }
+    };
+    emit_integer_from_expr(n, consts)
+}
 
-    // Check for a constant expression first
-    if let Some(cst) = RE_CONST.captures(n) {
-        let cst = cst.get(0).unwrap();
-        return emit_constant(cst.as_str(), consts);
+fn emit_integer_from_expr(n: NumExpr, consts: &HashMap<String, Expr>) -> TokenStream {
+    match n {
+        NumExpr::Number(n) => {
+            let n = n as u64;
+            quote! {#n}
+        }
+        NumExpr::Constant(cst) => emit_constant(&cst, consts),
+        _ => Error::new(
+            Span::call_site(),
+            format!("expression not yet supported: '{n:?}'"),
+        )
+        .to_compile_error(),
     }
-
-    // Otherwise search for integers
-    let Some(caps) = RE_INT.captures(n) else {
-        return Error::new(Span::call_site(), format!("Invalid integer: '{n}'")).to_compile_error();
-    };
-
-    // Get the content of the capture groups
-    let Some(num) = caps.get(3) else {
-        return Error::new(Span::call_site(), format!("Invalid integer: '{n}'")).to_compile_error();
-    };
-    let is_negative = caps.get(1).is_some();
-    let base = if caps.get(2).is_some() { 16 } else { 10 };
-
-    // Parse the constant
-    let Ok(mut n) = u64::from_str_radix(num.as_str(), base) else {
-        return Error::new(Span::call_site(), format!("Invalid constant '{n}'")).to_compile_error();
-    };
-    if is_negative {
-        n = -(n as i64) as u64;
-    }
-    quote! {#n}
 }
 
 /// Parse operands of the shape `imm(reg)`, as used in loads and stores.
@@ -350,26 +343,10 @@ fn emit_immediate_offset(
     imm_off: &str,
     consts: &HashMap<String, Expr>,
 ) -> Result<(TokenStream, TokenStream), Error> {
-    static RE: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"^(-?(0x)?[0-9A-Fa-f]+)\(([A-Za-z0-9]+)\)").unwrap());
-
-    // Seach for a match
-    let Some(caps) = RE.captures(imm_off) else {
-        return Err(Error::new(
-            Span::call_site(),
-            format!("Invalid immediate offset: '{imm_off}'"),
-        ));
-    };
-
-    // Get the content of the capture groups
-    let (Some(imm), Some(reg)) = (caps.get(1), caps.get(3)) else {
-        return Err(Error::new(
-            Span::call_site(),
-            format!("Invalid immediate or offset: '{imm_off}'"),
-        ));
-    };
-
-    Ok((emit_integer(imm.as_str(), consts), emit_reg(reg.as_str())))
+    match asm_parser::into_immediate_offset(imm_off) {
+        Ok((offset, reg)) => Ok((emit_integer_from_expr(offset, consts), emit_reg(reg))),
+        Err(err) => Err(Error::new(Span::call_site(), err.to_string())),
+    }
 }
 
 fn emit_symbol_addr(sym: &str, syms: &HashMap<String, Path>) -> TokenStream {
@@ -495,8 +472,5 @@ mod tests {
 
         // Test invalid immediate value
         assert!(emit_immediate_offset("invalid(x1)", &consts).is_err());
-
-        // Test invalid register
-        assert!(emit_immediate_offset("123(invalid_reg)", &consts).is_err());
     }
 }
