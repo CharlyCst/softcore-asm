@@ -27,18 +27,20 @@ struct PestParser;
 /// An expression, which can contain other expressions.
 ///
 /// Example: (2 + 3) * 8
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Expr {
     Number(i64),
+    Constant(String),
+    Neg(Box<Expr>),
     Binop {
-        rhs: Box<Expr>,
-        op: Binop,
         lhs: Box<Expr>,
+        op: Binop,
+        rhs: Box<Expr>,
     },
 }
 
 /// An operation taking a right and left operand, such as '+' or '*'.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Binop {
     Add,
     Sub,
@@ -47,24 +49,76 @@ pub enum Binop {
 }
 
 impl Expr {
-    fn evaluate(&self) -> i64 {
+    fn simplify(self) -> Expr {
         match self {
-            Expr::Number(n) => *n,
-            Expr::Binop { rhs, op, lhs } => match op {
-                Binop::Add => rhs.evaluate().wrapping_add(lhs.evaluate()),
-                Binop::Sub => rhs.evaluate().wrapping_sub(lhs.evaluate()),
-                Binop::Mul => rhs.evaluate().wrapping_mul(lhs.evaluate()),
-                Binop::Div => rhs.evaluate().wrapping_div(lhs.evaluate()),
-            },
+            Expr::Number(_) | Expr::Constant(_) => self,
+            Expr::Neg(ref n) => {
+                if let Some(n) = n.as_num() {
+                    Expr::Number(-n)
+                } else {
+                    self
+                }
+            }
+            Expr::Binop { lhs, op, rhs } => {
+                let lhs = lhs.simplify();
+                let rhs = rhs.simplify();
+                if let (Some(lhs), Some(rhs)) = (lhs.as_num(), rhs.as_num()) {
+                    let n = match op {
+                        Binop::Add => lhs.wrapping_add(rhs),
+                        Binop::Sub => lhs.wrapping_sub(rhs),
+                        Binop::Mul => lhs.wrapping_mul(rhs),
+                        Binop::Div => lhs.wrapping_div(rhs),
+                    };
+                    Expr::Number(n)
+                } else {
+                    Expr::Binop {
+                        lhs: Box::new(lhs),
+                        op,
+                        rhs: Box::new(rhs),
+                    }
+                }
+            }
+        }
+    }
+
+    fn as_num(&self) -> Option<i64> {
+        match self {
+            Expr::Number(n) => Some(*n),
+            _ => None,
         }
     }
 }
 
-// —————————————————————————————— Typed Parser —————————————————————————————— //
+// ——————————————————————————————— Public API ——————————————————————————————— //
+
+/// Parses an immediate offset, such as `2*8(x1)`
+pub fn into_immediate_offset(input: &str) -> Result<(Expr, &'_ str)> {
+    let pairs = PestParser::parse(Rule::imm_off, input)?.next().unwrap();
+    parse_immediate_offset(pairs)
+}
 
 /// Parses an expression, such as `(2 + 3) * 8`
-pub fn parse_immediate_offset(pair: Pair<Rule>) -> Result<i64> {
-    static IMM_OFFSET_PARSER: LazyLock<PrattParser<Rule>> = LazyLock::new(|| {
+pub fn into_numeric_expr(input: &str) -> Result<Expr> {
+    let pairs = PestParser::parse(Rule::expr, input)
+        .unwrap()
+        .next()
+        .unwrap();
+    parse_numeric_expr(pairs).map(|expr| expr.simplify())
+}
+
+// —————————————————————————————— Typed Parser —————————————————————————————— //
+
+/// Parses an immediate offset, such as `2*8(x1)`
+fn parse_immediate_offset(pair: Pair<'_, Rule>) -> Result<(Expr, &'_ str)> {
+    let mut pairs = pair.into_inner();
+    let offset = parse_numeric_expr(pairs.next().unwrap())?;
+    let register = parse_register(pairs.next().unwrap())?;
+    Ok((offset.simplify(), register))
+}
+
+/// Parses an expression, such as `(2 + 3) * 8`
+fn parse_numeric_expr(pair: Pair<Rule>) -> Result<Expr> {
+    static NUM_EXPR_PARSER: LazyLock<PrattParser<Rule>> = LazyLock::new(|| {
         use Rule::*;
         use pest::pratt_parser::Assoc::*;
         use pest::pratt_parser::Op;
@@ -73,30 +127,55 @@ pub fn parse_immediate_offset(pair: Pair<Rule>) -> Result<i64> {
         PrattParser::new()
             .op(Op::infix(add, Left) | Op::infix(sub, Left))
             .op(Op::infix(mul, Left) | Op::infix(div, Left))
+            .op(Op::prefix(unary_minus))
     });
 
-    let expr = IMM_OFFSET_PARSER
+    let expr = NUM_EXPR_PARSER
         .map_primary(|atom| match atom.as_rule() {
             Rule::number => Ok(Expr::Number(parse_number(atom)?)),
+            Rule::hex_number => Ok(Expr::Number(parse_hex_number(atom)?)),
+            Rule::constant => Ok(Expr::Constant(atom.as_str().to_string())),
+            Rule::expr => parse_numeric_expr(atom),
             _ => Err(anyhow!("Unexpected atom: {:?}", atom.as_rule())),
         })
         .map_infix(|left, op, right| {
             let op = parse_binop(op)?;
             Ok(Expr::Binop {
-                rhs: Box::new(left?),
+                lhs: Box::new(left?),
                 op,
-                lhs: Box::new(right?),
+                rhs: Box::new(right?),
             })
+        })
+        .map_prefix(|op, rhs| match op.as_rule() {
+            Rule::unary_minus => Ok(Expr::Neg(Box::new(rhs?))),
+            _ => Err(anyhow!("Unexpected prefix operator: {:?}", op.as_rule())),
         })
         .parse(pair.into_inner())?;
 
-    Ok(expr.evaluate())
+    Ok(expr)
+}
+
+fn parse_register(pair: Pair<'_, Rule>) -> Result<&'_ str> {
+    match pair.as_rule() {
+        Rule::any_reg => Ok(pair.as_str()),
+        _ => Err(anyhow!("Expected a register, got: {:?}", pair)),
+    }
 }
 
 fn parse_number(pair: Pair<Rule>) -> Result<i64> {
     match pair.as_rule() {
         Rule::number => Ok(pair.as_str().parse::<i64>()?),
         _ => Err(anyhow!("Expected a number, got: {:?}", pair)),
+    }
+}
+
+fn parse_hex_number(pair: Pair<Rule>) -> Result<i64> {
+    match pair.as_rule() {
+        Rule::hex_number => Ok(i64::from_str_radix(
+            pair.as_str().strip_prefix("0x").unwrap(),
+            16,
+        )?),
+        _ => Err(anyhow!("Expected an hex number, got: {:?}", pair)),
     }
 }
 
@@ -118,12 +197,30 @@ mod tests {
 
     #[test]
     fn immediate_offset() {
-        let expr_as_pair =
-            |s: &'static str| PestParser::parse(Rule::expr, s).unwrap().next().unwrap();
-        assert_eq!(parse_immediate_offset(expr_as_pair("3")).unwrap(), 3);
-        assert_eq!(parse_immediate_offset(expr_as_pair("3+2")).unwrap(), 5);
-        assert_eq!(parse_immediate_offset(expr_as_pair("3-2")).unwrap(), 1);
-        assert_eq!(parse_immediate_offset(expr_as_pair("3*2")).unwrap(), 6);
-        assert_eq!(parse_immediate_offset(expr_as_pair("8/2")).unwrap(), 4);
+        let parse = |s: &'static str| {
+            let ast = PestParser::parse(Rule::imm_off, s).unwrap().next().unwrap();
+            parse_immediate_offset(ast).unwrap()
+        };
+        assert_eq!(parse("8(x1)"), (Expr::Number(8), "x1"));
+        assert_eq!(parse("2*8(x1)"), (Expr::Number(16), "x1"));
+        assert_eq!(parse("(2 + 6)*8(x1)"), (Expr::Number(64), "x1"));
+        assert_eq!(parse("8({some_reg})"), (Expr::Number(8), "{some_reg}"));
+    }
+
+    #[test]
+    fn num_expr() {
+        let parse = |s: &'static str| {
+            let ast = PestParser::parse(Rule::expr, s).unwrap().next().unwrap();
+            parse_numeric_expr(ast).unwrap().simplify()
+        };
+        assert_eq!(parse("3"), Expr::Number(3));
+        assert_eq!(parse("3+2"), Expr::Number(5));
+        assert_eq!(parse("3-2"), Expr::Number(1));
+        assert_eq!(parse("3*2"), Expr::Number(6));
+        assert_eq!(parse("8/2"), Expr::Number(4));
+        assert_eq!(parse("3 + 2"), Expr::Number(5));
+        assert_eq!(parse("(2 + 6) * 8"), Expr::Number(64));
+        assert_eq!(parse("-3"), Expr::Number(-3));
+        assert_eq!(parse("0x42"), Expr::Number(0x42));
     }
 }
