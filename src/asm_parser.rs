@@ -24,6 +24,17 @@ struct PestParser;
 
 // ——————————————————————————————— Typed Ast ———————————————————————————————— //
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum AsmLine {
+    Instr(Instr),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Instr {
+    pub mnemonic: String,
+    pub operands: Vec<String>,
+}
+
 /// An expression, which can contain other expressions.
 ///
 /// Example: (2 + 3) * 8
@@ -91,6 +102,14 @@ impl Expr {
 
 // ——————————————————————————————— Public API ——————————————————————————————— //
 
+/// Parses a line of assembly.
+///
+/// Note that the line can be a comment or empty, in which case None is returned.
+pub fn into_asm_line(input: &str) -> Result<Option<AsmLine>> {
+    let pairs = PestParser::parse(Rule::asm_line, input)?.next().unwrap();
+    parse_assembly_line(pairs)
+}
+
 /// Parses an immediate offset, such as `2*8(x1)`
 pub fn into_immediate_offset(input: &str) -> Result<(Expr, &'_ str)> {
     let pairs = PestParser::parse(Rule::imm_off, input)?.next().unwrap();
@@ -107,6 +126,36 @@ pub fn into_numeric_expr(input: &str) -> Result<Expr> {
 }
 
 // —————————————————————————————— Typed Parser —————————————————————————————— //
+
+fn parse_assembly_line(pair: Pair<Rule>) -> Result<Option<AsmLine>> {
+    let pairs = pair.into_inner().next().unwrap();
+    match pairs.as_rule() {
+        Rule::asm_instr => Ok(Some(AsmLine::Instr(parse_asm_instr(pairs)?))),
+        Rule::empty_line => Ok(None),
+        _ => Err(anyhow!(
+            "Could not parse assembly line, got: {:?}",
+            pairs.as_rule()
+        )),
+    }
+}
+
+fn parse_asm_instr(pair: Pair<Rule>) -> Result<Instr> {
+    let mut operands = Vec::new();
+    let mut pairs = match pair.as_rule() {
+        Rule::asm_instr => pair.into_inner(),
+        _ => return Err(anyhow!("Expected an asm_line, got: {:?}", pair.as_rule())),
+    };
+    let mnemonic = pairs.next().unwrap().as_str().to_string(); // Always exist
+    for pair in pairs {
+        match pair.as_rule() {
+            Rule::operand => operands.push(pair.as_str().to_string()),
+            Rule::comment => (),
+            _ => return Err(anyhow!("Invalid asm instruction: {:?}", pair)),
+        }
+    }
+
+    Ok(Instr { mnemonic, operands })
+}
 
 /// Parses an immediate offset, such as `2*8(x1)`
 fn parse_immediate_offset(pair: Pair<'_, Rule>) -> Result<(Expr, &'_ str)> {
@@ -222,5 +271,33 @@ mod tests {
         assert_eq!(parse("(2 + 6) * 8"), Expr::Number(64));
         assert_eq!(parse("-3"), Expr::Number(-3));
         assert_eq!(parse("0x42"), Expr::Number(0x42));
+    }
+
+    #[test]
+    fn assembly_line() {
+        let parse = |s: &'static str| {
+            let ast = PestParser::parse(Rule::asm_line, s)
+                .unwrap()
+                .next()
+                .unwrap();
+            parse_assembly_line(ast).unwrap()
+        };
+
+        // Test an instruction without operands
+        let wfi = AsmLine::Instr(Instr {
+            mnemonic: "wfi".to_string(),
+            operands: vec![],
+        });
+        assert_eq!(parse("wfi").unwrap(), wfi);
+        assert_eq!(parse("wfi // This is a test comment").unwrap(), wfi);
+
+        // Test an instruction with operands
+        let csrw = AsmLine::Instr(Instr {
+            mnemonic: "csrw".to_string(),
+            operands: vec!["mscratch".to_string(), "x1".to_string()],
+        });
+        assert_eq!(parse("csrw mscratch, x1").unwrap(), csrw);
+        assert_eq!(parse("   csrw  mscratch  , x1  ").unwrap(), csrw);
+        assert_eq!(parse("csrw mscratch, x1 // Test comment").unwrap(), csrw);
     }
 }

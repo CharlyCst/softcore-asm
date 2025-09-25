@@ -3,7 +3,7 @@
 //! This file defines the the gammar to parse some assembly snippets, using the
 //! [Pest](https://pest.rs/) PEG parser generator.
 
-WHITESPACE = _{ " " }
+WHITESPACE = _{ " " | "\t" }
 
 // Punctuation and parenthesis
 l_par = _{ "(" }
@@ -29,3 +29,11 @@ expr        =  { atom ~ ( binop ~ atom )* }
 // Assembly constructs
 any_reg = @{ (ASCII_ALPHANUMERIC | "_" | "{" | "}" )+ }
 imm_off =  { expr ~ l_par ~ any_reg ~ r_par }
+
+// Assembly line
+comment    = _{ "//" ~ ANY* }
+mnemonic   = @{ ASCII_ALPHANUMERIC+ }
+operand    = @{ (!"//" ~ (ASCII_ALPHANUMERIC | "_" | "(" | ")" | "{" | "}" | "+" | "-" | "*" | "/"))+ }
+asm_instr  =  { mnemonic ~ (operand ~ ","?)* ~ comment? }
+empty_line =  { WHITESPACE* ~ comment? }
+asm_line   =  { WHITESPACE* ~ (asm_instr | empty_line) }

@@ -1,6 +1,5 @@
-use crate::InstructionInfo;
-use crate::asm_parser;
 use crate::asm_parser::Expr as NumExpr;
+use crate::{Instr, asm_parser};
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use std::collections::HashMap;
@@ -50,12 +49,12 @@ macro_rules! mul {
 // ————————————————————————— Instruction to Tokens —————————————————————————— //
 
 pub fn emit_softcore_instr(
-    instr: &InstructionInfo,
+    instr: &Instr,
     syms: &HashMap<String, Path>,
     consts: &HashMap<String, Expr>,
 ) -> Result<TokenStream, Error> {
     let ops = &instr.operands;
-    match instr.instr.as_str() {
+    match instr.mnemonic.as_str() {
         // CSR operations
         "csrrw" => {
             check_nb_op(instr, 3)?;
@@ -242,16 +241,38 @@ pub fn emit_softcore_instr(
         "mulhsu" => mul!(instr, ops, 0b010),
         "mulhu" => mul!(instr, ops, 0b011),
 
+        // System
+        "mret" => {
+            check_nb_op(instr, 0)?;
+            Ok(quote! { core.execute(ast::MRET(())) })
+        }
+        "sret" => {
+            check_nb_op(instr, 0)?;
+            Ok(quote! { core.execute(ast::SRET(())) })
+        }
+        "ecall" => {
+            check_nb_op(instr, 0)?;
+            Ok(quote! { core.execute(ast::ECALL(())) })
+        }
+        "ebreak" => {
+            check_nb_op(instr, 0)?;
+            Ok(quote! { core.execute(ast::EBREAK(())) })
+        }
+        "wfi" => {
+            check_nb_op(instr, 0)?;
+            Ok(quote! { core.execute(ast::WFI(())) })
+        }
+
         // Unknown instructions
         _ => Err(Error::new(
             Span::call_site(),
-            format!("Unknown instruction: {}", instr.instr),
+            format!("Unknown instruction: {}", instr.mnemonic),
         )),
     }
 }
 
 /// Returns an error if the number of operands is not `n`.
-fn check_nb_op(instr: &InstructionInfo, n: usize) -> Result<(), Error> {
+fn check_nb_op(instr: &Instr, n: usize) -> Result<(), Error> {
     let m = instr.operands.len();
     if m == n {
         Ok(())

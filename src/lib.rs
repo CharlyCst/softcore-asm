@@ -1,4 +1,6 @@
+use anyhow::Result;
 use proc_macro::TokenStream;
+use proc_macro2::Span;
 use quote::quote;
 use regex::Regex;
 use std::collections::HashMap;
@@ -11,13 +13,10 @@ mod riscv;
 
 use parser::{AsmInput, AsmOperand};
 
-use crate::parser::{KindRegister, OperandKind, RegisterOperand};
-
-#[derive(Debug, Clone)]
-struct InstructionInfo {
-    instr: String,         // "csrrw"
-    operands: Vec<String>, // ["x1", "mscratch", "{x}"]
-}
+use crate::{
+    asm_parser::{AsmLine, Instr, into_asm_line},
+    parser::{KindRegister, OperandKind, RegisterOperand},
+};
 
 #[derive(Clone)]
 struct RegAllocation {
@@ -28,41 +27,23 @@ struct RegAllocation {
 }
 
 struct MultiInstructionAnalysis {
-    instructions: Vec<InstructionInfo>,
+    instructions: Vec<Instr>,
     register_allocation: Vec<RegAllocation>,
     symbols: HashMap<String, Path>,
     consts: HashMap<String, Expr>,
 }
 
-fn parse_instruction(instr: &str) -> Option<InstructionInfo> {
-    let mut splitter = instr.splitn(2, |c: char| c.is_whitespace());
-    let instr = splitter.next()?.trim().to_string();
-    let operands = splitter
-        .next()?
-        .split(',')
-        .map(|op| op.trim().to_string())
-        .collect::<Vec<String>>();
-
-    Some(InstructionInfo { instr, operands })
-}
-
-fn parse_instructions(assembly_template: &[String]) -> Vec<InstructionInfo> {
+fn parse_instructions(assembly_template: &[String]) -> Result<Vec<AsmLine>> {
     let asm_text = assembly_template.join("\n");
-    let lines: Vec<&str> = asm_text
+    asm_text
         .lines()
-        .map(|line| line.trim())
-        .filter(|line| !line.is_empty() || line.starts_with("//"))
-        .collect();
-
-    let mut instrs = Vec::with_capacity(lines.len());
-    for line in lines {
-        let Some(instr) = parse_instruction(line) else {
-            eprintln!("Invalid assembly: '{}'", line);
-            continue;
-        };
-        instrs.push(instr);
-    }
-    instrs
+        .map(|line| into_asm_line(line.trim()))
+        .filter_map(|line| match line {
+            Ok(Some(asm)) => Some(Ok(asm)),
+            Ok(None) => None,
+            Err(err) => Some(Err(err)),
+        })
+        .collect::<Result<Vec<AsmLine>, _>>()
 }
 
 struct OperandMappings(
@@ -154,13 +135,21 @@ fn build_operand_register_map(operands: &[AsmOperand]) -> OperandMappings {
 fn analyze_multi_instructions(
     assembly_template: &[String],
     operands: &[AsmOperand],
-) -> MultiInstructionAnalysis {
+) -> Result<MultiInstructionAnalysis> {
     static RE: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"\{\s*([A-Za-z0-9_]+)\s*\}").unwrap());
 
     let OperandMappings(register_allocation, placeholder_instantiation, symbols, consts) =
         build_operand_register_map(operands);
-    let mut instructions = parse_instructions(assembly_template);
+    let asm_lines = parse_instructions(assembly_template)?;
+
+    // For now we only handle instructions
+    let mut instructions = asm_lines
+        .into_iter()
+        .map(|line| match line {
+            AsmLine::Instr(instr) => instr,
+        })
+        .collect::<Vec<_>>();
 
     // Replace all placeholder by the allocated register
     for instr in &mut instructions {
@@ -176,12 +165,12 @@ fn analyze_multi_instructions(
         }
     }
 
-    MultiInstructionAnalysis {
+    Ok(MultiInstructionAnalysis {
         instructions,
         register_allocation,
         symbols,
         consts,
-    }
+    })
 }
 
 fn generate_softcore_code(analysis: &MultiInstructionAnalysis) -> proc_macro2::TokenStream {
@@ -243,7 +232,13 @@ pub fn rasm(input: TokenStream) -> TokenStream {
         .collect::<Vec<String>>();
 
     // Analyze instructions for multi-instruction and CSR support
-    let analysis = analyze_multi_instructions(&assembly_strings, &asm_input.operands);
+    let analysis = match analyze_multi_instructions(&assembly_strings, &asm_input.operands) {
+        Ok(analysis) => analysis,
+        Err(err) => {
+            let err = syn::Error::new(Span::call_site(), err.to_string()).to_compile_error();
+            return quote! {#err}.into();
+        }
+    };
     let softcore_code = generate_softcore_code(&analysis);
     quote! {
         {
