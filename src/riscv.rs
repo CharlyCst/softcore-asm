@@ -1,5 +1,7 @@
+use crate::arch::Arch;
 use crate::asm_parser::Expr as NumExpr;
-use crate::{Instr, asm_parser};
+use crate::relooper::{Conditional, LabelTerminator};
+use crate::{Context, Instr, asm_parser};
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use std::collections::HashMap;
@@ -48,11 +50,132 @@ macro_rules! mul {
 
 // ————————————————————————— Instruction to Tokens —————————————————————————— //
 
-pub fn emit_softcore_instr(
-    instr: &Instr,
-    syms: &HashMap<String, Path>,
-    consts: &HashMap<String, Expr>,
-) -> Result<TokenStream, Error> {
+pub struct Riscv {}
+
+impl Arch for Riscv {
+    fn as_control_flow(instr: &Instr) -> Result<Option<LabelTerminator>, Error> {
+        let ops = &instr.operands;
+        match instr.mnemonic.as_str() {
+            "beq" => {
+                check_nb_op(instr, 3)?;
+                Ok(Some(LabelTerminator::Branch {
+                    cond: Conditional::Eq(ops[0].to_string(), ops[1].to_string()),
+                    if_true: ops[2].to_string(),
+                }))
+            }
+            "bne" => {
+                check_nb_op(instr, 3)?;
+                Ok(Some(LabelTerminator::Branch {
+                    cond: Conditional::Ne(ops[0].to_string(), ops[1].to_string()),
+                    if_true: ops[2].to_string(),
+                }))
+            }
+            "blt" => {
+                check_nb_op(instr, 3)?;
+                Ok(Some(LabelTerminator::Branch {
+                    cond: Conditional::Lt(ops[0].to_string(), ops[1].to_string()),
+                    if_true: ops[2].to_string(),
+                }))
+            }
+            "bge" => {
+                check_nb_op(instr, 3)?;
+                Ok(Some(LabelTerminator::Branch {
+                    cond: Conditional::Ge(ops[0].to_string(), ops[1].to_string()),
+                    if_true: ops[2].to_string(),
+                }))
+            }
+            "bltu" => {
+                check_nb_op(instr, 3)?;
+                Ok(Some(LabelTerminator::Branch {
+                    cond: Conditional::Ltu(ops[0].to_string(), ops[1].to_string()),
+                    if_true: ops[2].to_string(),
+                }))
+            }
+            "bgeu" => {
+                check_nb_op(instr, 3)?;
+                Ok(Some(LabelTerminator::Branch {
+                    cond: Conditional::Geu(ops[0].to_string(), ops[1].to_string()),
+                    if_true: ops[2].to_string(),
+                }))
+            }
+            // Pseudo-instructions with implicit x0
+            "beqz" => {
+                check_nb_op(instr, 2)?;
+                Ok(Some(LabelTerminator::Branch {
+                    cond: Conditional::Eq(ops[0].to_string(), "x0".to_string()),
+                    if_true: ops[1].to_string(),
+                }))
+            }
+            "bnez" => {
+                check_nb_op(instr, 2)?;
+                Ok(Some(LabelTerminator::Branch {
+                    cond: Conditional::Ne(ops[0].to_string(), "x0".to_string()),
+                    if_true: ops[1].to_string(),
+                }))
+            }
+            "blez" => {
+                check_nb_op(instr, 2)?;
+                Ok(Some(LabelTerminator::Branch {
+                    cond: Conditional::Ge("x0".to_string(), ops[0].to_string()),
+                    if_true: ops[1].to_string(),
+                }))
+            }
+            "bgez" => {
+                check_nb_op(instr, 2)?;
+                Ok(Some(LabelTerminator::Branch {
+                    cond: Conditional::Ge(ops[0].to_string(), "x0".to_string()),
+                    if_true: ops[1].to_string(),
+                }))
+            }
+            "bltz" => {
+                check_nb_op(instr, 2)?;
+                Ok(Some(LabelTerminator::Branch {
+                    cond: Conditional::Lt(ops[0].to_string(), "x0".to_string()),
+                    if_true: ops[1].to_string(),
+                }))
+            }
+            "bgtz" => {
+                check_nb_op(instr, 2)?;
+                Ok(Some(LabelTerminator::Branch {
+                    cond: Conditional::Lt("x0".to_string(), ops[0].to_string()),
+                    if_true: ops[1].to_string(),
+                }))
+            }
+            "j" => {
+                check_nb_op(instr, 1)?;
+                Ok(Some(LabelTerminator::Jump(ops[0].to_string())))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn emit_cond(cond: &Conditional) -> TokenStream {
+        let (reg_a, reg_b) = match cond {
+            Conditional::Eq(a, b) => (a, b),
+            Conditional::Ne(a, b) => (a, b),
+            Conditional::Lt(a, b) => (a, b),
+            Conditional::Ge(a, b) => (a, b),
+            Conditional::Ltu(a, b) => (a, b),
+            Conditional::Geu(a, b) => (a, b),
+        };
+        let reg_a = emit_reg(reg_a);
+        let reg_b = emit_reg(reg_b);
+        let a = quote! { core.get(#reg_a) };
+        let b = quote! { core.get(#reg_b) };
+        match cond {
+            Conditional::Eq(_, _) => quote! { #a == #b },
+            Conditional::Ne(_, _) => quote! { #a != #b },
+            Conditional::Lt(_, _) => quote! { #a <  #b },
+            Conditional::Ge(_, _) => quote! { #a >= #b },
+            Conditional::Ltu(_, _) => todo!("LTU conditionnal not supported"),
+            Conditional::Geu(_, _) => todo!("GEU conditionnal not supported"),
+        }
+    }
+}
+
+pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenStream, Error> {
+    let syms = &ctx.symbols;
+    let consts = &ctx.consts;
     let ops = &instr.operands;
     match instr.mnemonic.as_str() {
         // CSR operations

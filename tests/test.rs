@@ -496,6 +496,38 @@ fn load_immediate() {
 }
 
 #[test]
+fn branches() {
+    let mut result: u64 = 0;
+    rasm!(
+        "beq {input}, zero, zero_label",
+        "li {result}, 1",       // If not zero, set result to 1
+        "j end",
+        "zero_label:",
+        "li {result}, 2",       // If zero, set result to 2
+        "end:",
+        input = in(reg) 0,
+        result = out(reg) result,
+    );
+
+    assert_eq!(result, 2);
+
+    // Test with non-zero input
+    let mut result: u64 = 0;
+    rasm!(
+        "beq {input}, zero, zero_label",
+        "li {result}, 1",
+        "j end",
+        "zero_label:",
+        "li {result}, 2",
+        "end:",
+        input = in(reg) 42,
+        result = out(reg) result,
+    );
+
+    assert_eq!(result, 1);
+}
+
+#[test]
 fn symbols() {
     static mut MY_SYMBOL: u64 = 0;
 

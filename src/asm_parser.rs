@@ -22,14 +22,15 @@ use std::sync::LazyLock;
 #[grammar = "asm_parser.pest"]
 struct PestParser;
 
-// ——————————————————————————————— Typed Ast ———————————————————————————————— //
+// ——————————————————————————— Typed Assembly AST ——————————————————————————— //
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum AsmLine {
     Instr(Instr),
+    Label(String),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Instr {
     pub mnemonic: String,
     pub operands: Vec<String>,
@@ -131,11 +132,20 @@ fn parse_assembly_line(pair: Pair<Rule>) -> Result<Option<AsmLine>> {
     let pairs = pair.into_inner().next().unwrap();
     match pairs.as_rule() {
         Rule::asm_instr => Ok(Some(AsmLine::Instr(parse_asm_instr(pairs)?))),
+        Rule::asm_label => Ok(Some(AsmLine::Label(parse_asm_label(pairs)?))),
         Rule::empty_line => Ok(None),
         _ => Err(anyhow!(
             "Could not parse assembly line, got: {:?}",
             pairs.as_rule()
         )),
+    }
+}
+
+fn parse_asm_label(pair: Pair<Rule>) -> Result<String> {
+    let pairs = pair.into_inner().next().unwrap();
+    match pairs.as_rule() {
+        Rule::label_id => Ok(pairs.as_str().to_string()),
+        _ => Err(anyhow!("Expected a label, got: {:?}", pairs.as_rule())),
     }
 }
 

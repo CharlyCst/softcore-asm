@@ -7,16 +7,45 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 use syn::{Expr, Path, parse_macro_input};
 
+mod arch;
 mod asm_parser;
 mod parser;
+mod relooper;
 mod riscv;
 
 use parser::{AsmInput, AsmOperand};
 
-use crate::{
-    asm_parser::{AsmLine, Instr, into_asm_line},
-    parser::{KindRegister, OperandKind, RegisterOperand},
-};
+use arch::Arch;
+use asm_parser::{AsmLine, Instr, into_asm_line};
+use parser::{KindRegister, OperandKind, RegisterOperand};
+
+use crate::relooper::{Conditional, Shape, StructuredProgram};
+
+// ———————————————————————————— Compiler Driver ————————————————————————————— //
+
+struct Context<A> {
+    pub register_allocation: Vec<RegAllocation>,
+    pub symbols: HashMap<String, Path>,
+    pub consts: HashMap<String, Expr>,
+    #[allow(unused)]
+    pub arch: A,
+}
+
+fn as_to_rust<A: Arch>(asm: AsmInput, arch: A) -> Result<StructuredProgram<A>> {
+    // Extract the assembly string
+    let assembly_strings = asm
+        .template
+        .iter()
+        .map(|s| s.value())
+        .collect::<Vec<String>>();
+
+    parse_raw_assembly(&assembly_strings, &asm.operands, arch)?
+        .into_basic_blocks()?
+        .into_cfg()?
+        .into_structured()
+}
+
+// ——————————————————————————————— Proc Macro ——————————————————————————————— //
 
 #[derive(Clone)]
 struct RegAllocation {
@@ -26,11 +55,9 @@ struct RegAllocation {
     is_output: bool,
 }
 
-struct MultiInstructionAnalysis {
-    instructions: Vec<Instr>,
-    register_allocation: Vec<RegAllocation>,
-    symbols: HashMap<String, Path>,
-    consts: HashMap<String, Expr>,
+struct ParsedAssembly<A> {
+    asm_lines: Vec<AsmLine>,
+    ctx: Context<A>,
 }
 
 fn parse_instructions(assembly_template: &[String]) -> Result<Vec<AsmLine>> {
@@ -46,14 +73,10 @@ fn parse_instructions(assembly_template: &[String]) -> Result<Vec<AsmLine>> {
         .collect::<Result<Vec<AsmLine>, _>>()
 }
 
-struct OperandMappings(
-    Vec<RegAllocation>,
-    HashMap<String, String>,
-    HashMap<String, Path>,
-    HashMap<String, Expr>,
-);
-
-fn build_operand_register_map(operands: &[AsmOperand]) -> OperandMappings {
+fn build_operand_register_map<A>(
+    operands: &[AsmOperand],
+    arch: A,
+) -> (Context<A>, HashMap<String, String>) {
     let mut register_allocation = Vec::new();
     let mut placeholder_instantiation = HashMap::new();
     let mut symbols = HashMap::new();
@@ -124,35 +147,33 @@ fn build_operand_register_map(operands: &[AsmOperand]) -> OperandMappings {
         }
     }
 
-    OperandMappings(
-        register_allocation,
+    (
+        Context {
+            register_allocation,
+            symbols,
+            consts,
+            arch,
+        },
         placeholder_instantiation,
-        symbols,
-        consts,
     )
 }
 
-fn analyze_multi_instructions(
+fn parse_raw_assembly<A>(
     assembly_template: &[String],
     operands: &[AsmOperand],
-) -> Result<MultiInstructionAnalysis> {
+    arch: A,
+) -> Result<ParsedAssembly<A>> {
     static RE: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"\{\s*([A-Za-z0-9_]+)\s*\}").unwrap());
 
-    let OperandMappings(register_allocation, placeholder_instantiation, symbols, consts) =
-        build_operand_register_map(operands);
-    let asm_lines = parse_instructions(assembly_template)?;
-
-    // For now we only handle instructions
-    let mut instructions = asm_lines
-        .into_iter()
-        .map(|line| match line {
-            AsmLine::Instr(instr) => instr,
-        })
-        .collect::<Vec<_>>();
+    let (ctx, placeholder_instantiation) = build_operand_register_map(operands, arch);
+    let mut asm_lines = parse_instructions(assembly_template)?;
 
     // Replace all placeholder by the allocated register
-    for instr in &mut instructions {
+    for line in &mut asm_lines {
+        let AsmLine::Instr(instr) = line else {
+            continue;
+        };
         for op in &mut instr.operands {
             for caps in RE.captures_iter(&op.clone()) {
                 // Note: groups 0 and 1 are always present in this regex
@@ -165,23 +186,15 @@ fn analyze_multi_instructions(
         }
     }
 
-    Ok(MultiInstructionAnalysis {
-        instructions,
-        register_allocation,
-        symbols,
-        consts,
-    })
+    Ok(ParsedAssembly { asm_lines, ctx })
 }
 
-fn generate_softcore_code(analysis: &MultiInstructionAnalysis) -> proc_macro2::TokenStream {
-    let syms = &analysis.symbols;
-    let consts = &analysis.consts;
+fn generate_softcore_code<A: Arch>(prog: StructuredProgram<A>) -> proc_macro2::TokenStream {
     let mut setup_code = Vec::new();
-    let mut instruction_code = Vec::new();
     let mut extract_code = Vec::new();
 
     // Generate setup code for input registers
-    for reg_alloc in &analysis.register_allocation {
+    for reg_alloc in &prog.ctx.register_allocation {
         if reg_alloc.is_input {
             let reg = riscv::emit_reg(&reg_alloc.register);
             let expr = &reg_alloc.expr;
@@ -191,17 +204,11 @@ fn generate_softcore_code(analysis: &MultiInstructionAnalysis) -> proc_macro2::T
         }
     }
 
-    // Generate instruction execution code using proper register mapping
-    for instr in analysis.instructions.iter() {
-        let tokens = match riscv::emit_softcore_instr(instr, syms, consts) {
-            Ok(tokens) => tokens,
-            Err(err) => err.to_compile_error(),
-        };
-        instruction_code.push(tokens);
-    }
+    // Generate the Rust code corresponding to the assembly
+    let instruction_code = generate_structured_code(&prog.shape, &prog.ctx);
 
     // Generate extraction code for output registers
-    for reg_alloc in &analysis.register_allocation {
+    for reg_alloc in &prog.ctx.register_allocation {
         if reg_alloc.is_output {
             let reg = riscv::emit_reg(&reg_alloc.register);
             let expr = &reg_alloc.expr;
@@ -214,32 +221,67 @@ fn generate_softcore_code(analysis: &MultiInstructionAnalysis) -> proc_macro2::T
     quote! {
         SOFT_CORE.with_borrow_mut(|core| {
             #(#setup_code)*
-            #(#instruction_code)*
+            #instruction_code
             #(#extract_code)*
         })
+    }
+}
+
+fn generate_structured_code<A: Arch>(shape: &Shape, ctx: &Context<A>) -> proc_macro2::TokenStream {
+    match shape {
+        relooper::Shape::Block { instrs, next } => {
+            let mut code = proc_macro2::TokenStream::new();
+            for instr in instrs {
+                let tokens = match riscv::emit_softcore_instr(instr, ctx) {
+                    Ok(tokens) => tokens,
+                    Err(err) => err.to_compile_error(),
+                };
+                code.extend(tokens);
+            }
+            if let Some(next_shape) = next {
+                code.extend(generate_structured_code(next_shape, ctx))
+            }
+            code
+        }
+        relooper::Shape::If {
+            cond,
+            then_branch,
+            else_branch,
+            next,
+        } => {
+            let cond = A::emit_cond(cond);
+            let then_branch = generate_structured_code(then_branch, ctx);
+            let else_branch = else_branch
+                .as_ref()
+                .map(|x| generate_structured_code(x, ctx));
+            let next = next.as_ref().map(|x| generate_structured_code(x, ctx));
+
+            quote! {
+                if #cond {
+                    #then_branch
+                } else {
+                    #else_branch
+                }
+                #next
+            }
+        }
     }
 }
 
 #[proc_macro]
 pub fn rasm(input: TokenStream) -> TokenStream {
     let asm_input = parse_macro_input!(input as AsmInput);
+    let arch = riscv::Riscv {}; // We only support RISC-V for now
 
-    // Extract the assembly string
-    let assembly_strings = asm_input
-        .template
-        .iter()
-        .map(|s| s.value())
-        .collect::<Vec<String>>();
-
-    // Analyze instructions for multi-instruction and CSR support
-    let analysis = match analyze_multi_instructions(&assembly_strings, &asm_input.operands) {
-        Ok(analysis) => analysis,
+    let assembly = match as_to_rust(asm_input, arch) {
+        Ok(asm) => asm,
         Err(err) => {
             let err = syn::Error::new(Span::call_site(), err.to_string()).to_compile_error();
             return quote! {#err}.into();
         }
     };
-    let softcore_code = generate_softcore_code(&analysis);
+
+    let softcore_code = generate_softcore_code(assembly);
     quote! {
         {
             #[allow(unused_imports)]

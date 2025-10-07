@@ -32,8 +32,10 @@ imm_off =  { expr ~ l_par ~ any_reg ~ r_par }
 
 // Assembly line
 comment    = _{ "//" ~ ANY* }
+label_id   = @{ (ASCII_ALPHANUMERIC | "_")+ }
 mnemonic   = @{ ASCII_ALPHANUMERIC+ }
 operand    = @{ (!"//" ~ (ASCII_ALPHANUMERIC | "_" | "(" | ")" | "{" | "}" | "+" | "-" | "*" | "/"))+ }
 asm_instr  =  { mnemonic ~ (operand ~ ","?)* ~ comment? }
+asm_label  =  { label_id ~ ":" }
 empty_line =  { WHITESPACE* ~ comment? }
-asm_line   =  { WHITESPACE* ~ (asm_instr | empty_line) }
+asm_line   =  { WHITESPACE* ~ (asm_label | asm_instr | empty_line) }
