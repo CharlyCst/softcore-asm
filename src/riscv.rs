@@ -378,23 +378,23 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
         // System
         "mret" => {
             check_nb_op(instr, 0)?;
-            Ok(quote! { core.execute(ast::MRET(())) })
+            Ok(quote! { core.execute(ast::MRET(())); })
         }
         "sret" => {
             check_nb_op(instr, 0)?;
-            Ok(quote! { core.execute(ast::SRET(())) })
+            Ok(quote! { core.execute(ast::SRET(())); })
         }
         "ecall" => {
             check_nb_op(instr, 0)?;
-            Ok(quote! { core.execute(ast::ECALL(())) })
+            Ok(quote! { core.execute(ast::ECALL(())); })
         }
         "ebreak" => {
             check_nb_op(instr, 0)?;
-            Ok(quote! { core.execute(ast::EBREAK(())) })
+            Ok(quote! { core.execute(ast::EBREAK(())); })
         }
         "wfi" => {
             check_nb_op(instr, 0)?;
-            Ok(quote! { core.execute(ast::WFI(())) })
+            Ok(quote! { core.execute(ast::WFI(())); })
         }
 
         // Unknown instructions
