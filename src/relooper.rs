@@ -359,7 +359,7 @@ fn find_reachable(
 ///
 /// Returns the block where control flow from different branches merges back together.
 /// For a simplified implementation, returns the block with the smallest ID in the remaining set.
-fn find_merge_point(remaining: &HashSet<BasicBlockID>, cfg: &[BasicBlock]) -> Option<BasicBlockID> {
+fn find_merge_point(remaining: &HashSet<BasicBlockID>, _cfg: &[BasicBlock]) -> Option<BasicBlockID> {
     if remaining.is_empty() {
         return None;
     }
