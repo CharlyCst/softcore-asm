@@ -286,7 +286,7 @@ fn resolve_terminator(
                 Ok(Terminator::Jump(BasicBlockID::new(index + 1)))
             }
         }
-        LabelTerminator::Branch { cond, if_true } => match resolve_named_label(if_true, blocks) {
+        LabelTerminator::Branch { cond, if_true } => match resolve_label(if_true, index, blocks) {
             Some(if_true) => Ok(Terminator::Branch {
                 cond: cond.clone(),
                 if_true: BasicBlockID(if_true),
@@ -294,10 +294,30 @@ fn resolve_terminator(
             }),
             None => Err(anyhow!("Could not find label '{}'", if_true)),
         },
-        LabelTerminator::Jump(target) => match resolve_named_label(target, blocks) {
+        LabelTerminator::Jump(target) => match resolve_label(target, index, blocks) {
             Some(id) => Ok(Terminator::Jump(BasicBlockID::new(id))),
             None => Err(anyhow!("Could not find label '{}'", target)),
         },
+    }
+}
+
+/// Find the index of a basic block by its label.
+///
+/// Searches through all blocks to find one with a matching label, returning its index.
+fn resolve_label(label: &str, block_index: usize, blocks: &[RawBasicBlock]) -> Option<usize> {
+    if let Some(l) = label.strip_suffix('f')
+        && l.parse::<usize>().is_ok()
+    {
+        // Forward numeric label
+        resolve_numeric_label_forward(l, block_index, blocks)
+    } else if let Some(l) = label.strip_suffix('b')
+        && l.parse::<usize>().is_ok()
+    {
+        // Backward numeric label
+        resolve_numeric_label_backward(l, block_index, blocks)
+    } else {
+        // String label
+        resolve_named_label(label, blocks)
     }
 }
 
@@ -306,6 +326,42 @@ fn resolve_terminator(
 /// Searches through all blocks to find one with a matching label, returning its index.
 fn resolve_named_label(label: &str, blocks: &[RawBasicBlock]) -> Option<usize> {
     for (id, bb) in blocks.iter().enumerate() {
+        if bb.labels.iter().any(|l| l == label) {
+            return Some(id);
+        }
+    }
+
+    None
+}
+
+/// Find the index of a basic block by its numeric label, searching forward.
+///
+/// Searches through blocks after the current block to find one with a matching numeric label.
+/// Used for forward references like "1f".
+fn resolve_numeric_label_forward(
+    label: &str,
+    block_index: usize,
+    blocks: &[RawBasicBlock],
+) -> Option<usize> {
+    for (id, bb) in blocks.iter().enumerate().skip(block_index + 1) {
+        if bb.labels.iter().any(|l| l == label) {
+            return Some(id);
+        }
+    }
+
+    None
+}
+
+/// Find the index of a basic block by its numeric label, searching backward.
+///
+/// Searches through blocks before the current block to find one with a matching numeric label.
+/// Used for backward references like "1b".
+fn resolve_numeric_label_backward(
+    label: &str,
+    block_index: usize,
+    blocks: &[RawBasicBlock],
+) -> Option<usize> {
+    for (id, bb) in blocks.iter().enumerate().take(block_index) {
         if bb.labels.iter().any(|l| l == label) {
             return Some(id);
         }
@@ -359,7 +415,10 @@ fn find_reachable(
 ///
 /// Returns the block where control flow from different branches merges back together.
 /// For a simplified implementation, returns the block with the smallest ID in the remaining set.
-fn find_merge_point(remaining: &HashSet<BasicBlockID>, _cfg: &[BasicBlock]) -> Option<BasicBlockID> {
+fn find_merge_point(
+    remaining: &HashSet<BasicBlockID>,
+    _cfg: &[BasicBlock],
+) -> Option<BasicBlockID> {
     if remaining.is_empty() {
         return None;
     }
