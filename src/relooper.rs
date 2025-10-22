@@ -274,7 +274,7 @@ impl<A: Arch> ControlFlowGraph<A> {
 fn resolve_terminator(
     terminator: &LabelTerminator,
     index: usize,
-    blocks: &Vec<RawBasicBlock>,
+    blocks: &[RawBasicBlock],
 ) -> Result<Terminator> {
     match terminator {
         LabelTerminator::Done => {
@@ -514,11 +514,14 @@ fn detect_shape(
                 None
             };
 
-            Ok(Shape::If {
-                cond: cond.clone(),
-                then_branch,
-                else_branch,
-                next,
+            Ok(Shape::Block {
+                instrs: block.instrs.clone(),
+                next: Some(Box::new(Shape::If {
+                    cond: cond.clone(),
+                    then_branch,
+                    else_branch,
+                    next,
+                })),
             })
         }
     }
