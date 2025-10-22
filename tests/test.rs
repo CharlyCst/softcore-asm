@@ -493,6 +493,9 @@ fn load_immediate() {
     SOFT_CORE.with_borrow_mut(|core| assert_eq!(core.get(reg::X1), (-100i64 as u64)));
     rasm!("li x1, -0xbeef");
     SOFT_CORE.with_borrow_mut(|core| assert_eq!(core.get(reg::X1), (-0xbeefi64 as u64)));
+
+    rasm!("li x1, {n}", n = const 42);
+    SOFT_CORE.with_borrow_mut(|core| assert_eq!(core.get(reg::X1), 42));
 }
 
 #[test]
