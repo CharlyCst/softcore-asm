@@ -199,6 +199,7 @@ fn parse_raw_assembly<A>(
 fn generate_softcore_code<A: Arch>(prog: StructuredProgram<A>) -> proc_macro2::TokenStream {
     let mut setup_code = Vec::new();
     let mut extract_code = Vec::new();
+    let mut assignments = Vec::new();
 
     // Generate setup code for input registers
     for reg_alloc in &prog.ctx.register_allocation {
@@ -219,21 +220,37 @@ fn generate_softcore_code<A: Arch>(prog: StructuredProgram<A>) -> proc_macro2::T
         if reg_alloc.is_output {
             let reg = riscv::emit_reg(&reg_alloc.register);
             let expr = &reg_alloc.expr;
-            extract_code.push(quote! {
-                #expr = core.get(#reg);
-            });
+
+            // Skip assigning values to `_`
+            if let Expr::Infer(_) = expr {
+                continue;
+            }
+
+            extract_code.push(quote! { core.get(#reg) as _ });
+            assignments.push(expr);
         }
     }
 
     // Get the softcore accessor
     let softcore = prog.ctx.softcore;
 
-    quote! {
-        #softcore(|core| {
-            #(#setup_code)*
-            #instruction_code
-            #(#extract_code)*
-        })
+    if assignments.is_empty() {
+        // No assignment, simply execute the instructions
+        quote! {
+            #softcore(|core| {
+                #(#setup_code)*
+                #instruction_code
+            });
+        }
+    } else {
+        // Return the assigned values from the closure, and assign them to the target variables
+        quote! {
+            (#(#assignments,)*) = #softcore(|core| {
+                #(#setup_code)*
+                #instruction_code
+                (#(#extract_code,)*)
+            });
+        }
     }
 }
 

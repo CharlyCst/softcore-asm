@@ -43,14 +43,13 @@ macro_rules! rasm {
 #[test]
 fn csr() {
     let value: u64 = 0xdeadbeef;
-    let mut prev_value: u64 = 0;
-    let mut final_value: u64 = 0;
+    let final_value: u64;
 
     rasm!(
         "csrrw {prev}, mscratch, {x}
         csrrw {final_val}, mscratch, x0",
         x = in(reg) value,
-        prev = out(reg) prev_value,
+        prev = out(reg) _,
         final_val = out(reg) final_value,
         options(nomem)
     );
@@ -74,9 +73,9 @@ fn load() {
         // Double words
         let mut vals: [u64; 3] = [0xbeef00beef, 0x0badbed00badbed0, 0x0123456789abcdef];
         let vals_addr = vals.as_mut_ptr().offset(1) as usize;
-        let mut val0: u64 = 0;
-        let mut val1: u64 = 0;
-        let mut val2: u64 = 0;
+        let val0: u64;
+        let val1: u64;
+        let val2: u64;
 
         rasm!(
             "ld {val0}, -8({addr})
@@ -95,9 +94,9 @@ fn load() {
         // Words
         let mut vals: [u32; 3] = [0xbeef0000, 0x0badbed0, 0x01234567];
         let vals_addr = vals.as_mut_ptr().offset(1) as usize;
-        let mut val0: u64 = 0;
-        let mut val1: u64 = 0;
-        let mut val2: u64 = 0;
+        let val0: u64;
+        let val1: u64;
+        let val2: u64;
 
         rasm!(
             "lwu {val0}, -4({addr})
@@ -116,9 +115,9 @@ fn load() {
         // Half words
         let mut vals: [u16; 3] = [0xbeef, 0x0bad, 0x0123];
         let vals_addr = vals.as_mut_ptr().offset(1) as usize;
-        let mut val0: u64 = 0;
-        let mut val1: u64 = 0;
-        let mut val2: u64 = 0;
+        let val0: u64;
+        let val1: u64;
+        let val2: u64;
 
         rasm!(
             "lhu {val0}, -2({addr})
@@ -137,9 +136,9 @@ fn load() {
         // Bytes
         let mut vals: [u8; 3] = [0xbe, 0x0b, 0x01];
         let vals_addr = vals.as_mut_ptr().offset(1) as usize;
-        let mut val0: u64 = 0;
-        let mut val1: u64 = 0;
-        let mut val2: u64 = 0;
+        let val0: u64;
+        let val1: u64;
+        let val2: u64;
 
         rasm!(
             "lbu {val0}, -1({addr})
@@ -254,7 +253,7 @@ fn store() {
 fn rtype() {
     let x = 42;
     let y = 20;
-    let mut sum = 0;
+    let sum: u64;
     rasm!(
         "add {sum}, {x}, {y}",
         x = in(reg) x,
@@ -263,7 +262,7 @@ fn rtype() {
     );
     assert_eq!(sum, x + y);
 
-    let mut diff = 0;
+    let diff: u64;
     rasm!(
         "sub {diff}, {x}, {y}",
         x = in(reg) x,
@@ -272,7 +271,7 @@ fn rtype() {
     );
     assert_eq!(diff, x - y);
 
-    let mut and = 0;
+    let and: u64;
     rasm!(
         "and {and}, {x}, {y}",
         x = in(reg) x,
@@ -281,7 +280,7 @@ fn rtype() {
     );
     assert_eq!(and, x & y);
 
-    let mut or = 0;
+    let or: u64;
     rasm!(
         "or {or}, {x}, {y}",
         x = in(reg) x,
@@ -290,7 +289,7 @@ fn rtype() {
     );
     assert_eq!(or, x | y);
 
-    let mut xor = 0;
+    let xor: u64;
     rasm!(
         "xor {xor}, {x}, {y}",
         x = in(reg) x,
@@ -303,8 +302,8 @@ fn rtype() {
 #[test]
 fn itype() {
     let x = 42;
-    let mut sum1 = 0;
-    let mut sum2 = 0;
+    let sum1: u64;
+    let sum2: u64;
     rasm!(
         "addi {sum1}, {x}, 20",
         "addi {sum2}, {x}, -20",
@@ -315,9 +314,9 @@ fn itype() {
     assert_eq!(sum1, x + 20);
     assert_eq!(sum2, x - 20);
 
-    let mut and_result = 0;
-    let mut or_result = 0;
-    let mut xor_result = 0;
+    let and_result: u64;
+    let or_result: u64;
+    let xor_result: u64;
     rasm!(
         "andi {and_result}, {x}, 0x0f",
         "ori {or_result}, {x}, 0x80",
@@ -337,7 +336,7 @@ fn mul() {
     // Test basic multiplication
     let x = 6u64;
     let y = 7u64;
-    let mut result = 0u64;
+    let result: u64;
 
     rasm!(
         "mul {result}, {x}, {y}",
@@ -350,7 +349,7 @@ fn mul() {
     // Test multiplication with larger numbers
     let x = 0x123456789abcdef0u64;
     let y = 0x2u64;
-    let mut result = 0u64;
+    let result: u64;
 
     rasm!(
         "mul {result}, {x}, {y}",
@@ -449,7 +448,7 @@ fn mul() {
 #[test]
 fn mixed_operands() {
     let mut input_val = 42;
-    let mut output_val = 0;
+    let mut output_val: u64;
 
     // rasm!("add {result}, {}, {temp}",
     //       in(reg) input_val,          // Positional operand
@@ -509,7 +508,7 @@ fn load_immediate() {
 
 #[test]
 fn branches() {
-    let mut result: u64 = 0;
+    let result: u64;
     rasm!(
         "beq {input}, zero, zero_label",
         "li {result}, 1",       // If not zero, set result to 1
@@ -523,7 +522,7 @@ fn branches() {
     assert_eq!(result, 2);
 
     // Test with non-zero input
-    let mut result: u64 = 0;
+    let result: u64;
     rasm!(
         "beq {input}, zero, zero_label",
         "li {result}, 1",
@@ -537,7 +536,7 @@ fn branches() {
     assert_eq!(result, 1);
 
     // Numeral labels
-    let mut result: u64 = 0;
+    let result: u64;
     rasm!(
         "beq {input}, zero, 100f",
         "li {result}, 1",       // If not zero, set result to 1
@@ -557,7 +556,7 @@ fn symbols() {
 
     unsafe {
         let new_val: u64 = 0xcafe0bad0bed0;
-        let mut sym_addr = 0;
+        let sym_addr: u64;
 
         rasm!(
             "la {sym_addr}, {my_sym}",
@@ -576,7 +575,7 @@ fn symbols() {
 #[test]
 fn consts() {
     let value: u64 = 42;
-    let mut out: u64 = 0;
+    let out: u64;
 
     rasm!(
         "li {out}, {value_size}",
