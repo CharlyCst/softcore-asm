@@ -279,7 +279,7 @@ fn generate_structured_code<A: Arch>(shape: &Shape, ctx: &Context<A>) -> proc_ma
 }
 
 #[proc_macro]
-pub fn rasm(input: TokenStream) -> TokenStream {
+pub fn asm(input: TokenStream) -> TokenStream {
     let asm_input = parse_macro_input!(input as AsmInput);
     let arch = riscv::Riscv {}; // We only support RISC-V for now
 
