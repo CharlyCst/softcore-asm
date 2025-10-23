@@ -1,7 +1,14 @@
 [package]
-name = "softcore-asm"
+name = "softcore-asm-rv64"
 version = "0.1.0"
 edition = "2024"
+authors = ["Charly Castes"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/CharlyCst/softcore-rs"
+description = "A macro to facilitate the use of softcore-rv64"
+keywords = ["riscv", "specification", "emulator"]
+categories = ["emulators", "development-tools::testing"]
+readme = "README.md"
 
 [lib]
 proc-macro = true
@@ -14,5 +21,5 @@ anyhow = "=1.0.99"
 regex = "1.11.2"
 pest = "2.8.2"
 pest_derive = "2.8.2"
-softcore-rv64 = { git = "https://github.com/CharlyCst/softcore-rs.git", branch = "execute-hack" }
+softcore-rv64 = "0.5.0"
 

@@ -9,7 +9,7 @@ Softcore-asm is an experiment Rust macro that accept standard inline Rust assemb
 The following macro:
 
 ```rs
-rasm!(
+softcore_asm_rv64::asm!(
     // Save x5
     "csrw mscratch, x5",
     // Skip illegal instruction (pc += 4)
@@ -21,6 +21,7 @@ rasm!(
     "csrrw x5, mscratch, x5",
     // Return back to miralis
     "mret",
+    softcore(SOFT_CORE.with_borrow_mut)
 );
 ```
 
@@ -38,5 +39,6 @@ SOFT_CORE.with_borrow_mut(|core| {
     core.execute(ast::ITYPE((bv(1u64), reg::X0, reg::X5, iop::ADDI)));
     core.csrrw(reg::X5, csr_name_map_backwards("mscratch").bits(), reg::X5)
         .unwrap();
+    core.execute(ast::MRET(()));
 })
 ```

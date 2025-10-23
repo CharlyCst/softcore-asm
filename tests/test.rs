@@ -33,7 +33,7 @@ thread_local! {
 /// A macro that wraps the softcore asm macro to add the softcore parameter automatically.
 macro_rules! rasm {
     ($($asm:tt)*) => {
-        softcore_asm::asm!(
+        softcore_asm_rv64::asm!(
             $($asm)*,
             softcore(SOFT_CORE.with_borrow_mut)
         )
