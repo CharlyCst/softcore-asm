@@ -19,6 +19,8 @@ pub struct AsmInput {
 pub enum AsmOperand {
     Register(RegisterOperand),
     Options(Expr),
+    /// A function that expose the core to operate on
+    Softcore(Expr),
 }
 
 #[derive(Clone)]
@@ -144,6 +146,11 @@ impl Parse for AsmOperand {
             let remaining_tokens = content.parse::<proc_macro2::TokenStream>()?;
             let expr: Expr = syn::parse2(quote! { (#remaining_tokens) })?;
             Ok(AsmOperand::Options(expr))
+        } else if input.peek(Ident) && input.fork().parse::<Ident>().unwrap() == "softcore" {
+            input.parse::<Ident>()?; // consume "options"
+            let content;
+            syn::parenthesized!(content in input);
+            Ok(AsmOperand::Softcore(content.parse::<Expr>()?))
         } else {
             Ok(AsmOperand::Register(input.parse::<RegisterOperand>()?))
         }
@@ -163,10 +170,16 @@ impl Parse for AsmInput {
         let mut options = Vec::new();
 
         while !input.is_empty() {
+            // We parse at least one column, but more if needed
             input.parse::<Token![,]>()?;
+            while !input.is_empty() && input.peek(Token![,]) {
+                input.parse::<Token![,]>()?;
+            }
             if input.is_empty() {
                 break;
             }
+
+            // Now we can process the next operand
             let operand = input.parse::<AsmOperand>()?;
             if let AsmOperand::Options(Expr::Tuple(tuple)) = &operand {
                 for elem in &tuple.elems {
@@ -281,6 +294,9 @@ mod tests {
         syn::parse2::<AsmOperand>(tokens).unwrap();
 
         let tokens = quote! {options(nomem)};
+        syn::parse2::<AsmOperand>(tokens).unwrap();
+
+        let tokens = quote! {softcore(path::to::function)};
         syn::parse2::<AsmOperand>(tokens).unwrap();
     }
 

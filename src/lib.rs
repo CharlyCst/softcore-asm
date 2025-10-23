@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
@@ -9,15 +9,13 @@ use syn::{Expr, Path, parse_macro_input};
 
 mod arch;
 mod asm_parser;
-mod parser;
+mod macro_parser;
 mod relooper;
 mod riscv;
 
-use parser::{AsmInput, AsmOperand};
-
 use arch::Arch;
 use asm_parser::{AsmLine, Instr, into_asm_line};
-use parser::{KindRegister, OperandKind, RegisterOperand};
+use macro_parser::{AsmInput, AsmOperand, KindRegister, OperandKind, RegisterOperand};
 
 use crate::relooper::{Conditional, Shape, StructuredProgram};
 
@@ -27,6 +25,7 @@ struct Context<A> {
     pub register_allocation: Vec<RegAllocation>,
     pub symbols: HashMap<String, Path>,
     pub consts: HashMap<String, Expr>,
+    pub softcore: Expr,
     #[allow(unused)]
     pub arch: A,
 }
@@ -76,9 +75,10 @@ fn parse_instructions(assembly_template: &[String]) -> Result<Vec<AsmLine>> {
 fn build_operand_register_map<A>(
     operands: &[AsmOperand],
     arch: A,
-) -> (Context<A>, HashMap<String, String>) {
+) -> Result<(Context<A>, HashMap<String, String>)> {
     let mut register_allocation = Vec::new();
     let mut placeholder_instantiation = HashMap::new();
+    let mut softcore = None;
     let mut symbols = HashMap::new();
     let mut consts = HashMap::new();
     let mut reg_counter = 1;
@@ -103,14 +103,14 @@ fn build_operand_register_map<A>(
                         ident
                     };
                     let register = match reg {
-                        parser::RegisterKind::Ident(_ident) => {
+                        macro_parser::RegisterKind::Ident(_ident) => {
                             // TODO: each arch should check the ident to decide which register to
                             // allocate. We use a simple temporary register allocator for now.
                             let register = format!("x{}", reg_counter);
                             reg_counter += 1;
                             register
                         }
-                        parser::RegisterKind::String(reg) => reg.clone(),
+                        macro_parser::RegisterKind::String(reg) => reg.clone(),
                     };
 
                     let regalloc = RegAllocation {
@@ -144,18 +144,25 @@ fn build_operand_register_map<A>(
                     placeholder_instantiation.insert(ident, cst);
                 }
             }
+        } else if let AsmOperand::Softcore(expr) = operand {
+            softcore = Some(expr);
         }
     }
 
-    (
+    let Some(softcore) = softcore.cloned() else {
+        return Err(anyhow!("Missing 'softcore' argument"));
+    };
+
+    Ok((
         Context {
             register_allocation,
             symbols,
             consts,
             arch,
+            softcore,
         },
         placeholder_instantiation,
-    )
+    ))
 }
 
 fn parse_raw_assembly<A>(
@@ -166,7 +173,7 @@ fn parse_raw_assembly<A>(
     static RE: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"\{\s*([A-Za-z0-9_]+)\s*\}").unwrap());
 
-    let (ctx, placeholder_instantiation) = build_operand_register_map(operands, arch);
+    let (ctx, placeholder_instantiation) = build_operand_register_map(operands, arch)?;
     let mut asm_lines = parse_instructions(assembly_template)?;
 
     // Replace all placeholder by the allocated register
@@ -218,8 +225,11 @@ fn generate_softcore_code<A: Arch>(prog: StructuredProgram<A>) -> proc_macro2::T
         }
     }
 
+    // Get the softcore accessor
+    let softcore = prog.ctx.softcore;
+
     quote! {
-        SOFT_CORE.with_borrow_mut(|core| {
+        #softcore(|core| {
             #(#setup_code)*
             #instruction_code
             #(#extract_code)*

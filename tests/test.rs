@@ -1,5 +1,4 @@
 use core::cell::RefCell;
-use softcore_asm::rasm;
 use std::thread_local;
 
 use softcore_rv64::prelude::bv;
@@ -28,6 +27,16 @@ thread_local! {
         let mut core = new_core(config::U74);
         core.reset();
         RefCell::new(core)
+    };
+}
+
+/// A macro that wraps the softcore asm macro to add the softcore parameter automatically.
+macro_rules! rasm {
+    ($($asm:tt)*) => {
+        softcore_asm::rasm!(
+            $($asm)*,
+            softcore(SOFT_CORE.with_borrow_mut)
+        )
     };
 }
 
