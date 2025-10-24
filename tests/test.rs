@@ -624,3 +624,63 @@ fn miralis_trap_detector() {
         assert_eq!(core.mscratch.bits(), 1);
     });
 }
+
+#[test]
+fn concat_macro_basic() {
+    // Test basic concat with CSR write
+    let pmpaddr_val: u64 = 0x80000;
+
+    rasm!(
+        concat!("csrw pmpaddr", 0, ", {addr}"),
+        addr = in(reg) pmpaddr_val,
+        options(nomem)
+    );
+
+    SOFT_CORE.with_borrow_mut(|core| {
+        assert_eq!(core.pmpaddr_n[0].bits(), pmpaddr_val);
+    });
+}
+
+#[test]
+fn concat_macro_multiple_indices() {
+    // Test concat with different register indices
+    let addr0: u64 = 0x1000;
+    let addr1: u64 = 0x2000;
+    let addr2: u64 = 0x3000;
+
+    rasm!(
+        concat!("csrw pmpaddr", 0, ", {addr0}"),
+        concat!("csrw pmpaddr", 1, ", {addr1}"),
+        concat!("csrw pmpaddr", 2, ", {addr2}"),
+        addr0 = in(reg) addr0,
+        addr1 = in(reg) addr1,
+        addr2 = in(reg) addr2,
+        options(nomem)
+    );
+
+    SOFT_CORE.with_borrow_mut(|core| {
+        assert_eq!(core.pmpaddr_n[0].bits(), addr0);
+        assert_eq!(core.pmpaddr_n[1].bits(), addr1);
+        assert_eq!(core.pmpaddr_n[2].bits(), addr2);
+    });
+}
+
+#[test]
+fn concat_macro_mixed_templates() {
+    // Test mixing regular strings and concat! in templates
+    let addr: u64 = 0x4000;
+    let result: u64;
+
+    rasm!(
+        "li {result}, 0x80",
+        concat!("csrw pmpaddr", 3, ", {addr}"),
+        result = out(reg) result,
+        addr = in(reg) addr,
+        options(nomem)
+    );
+
+    assert_eq!(result, 0x80);
+    SOFT_CORE.with_borrow_mut(|core| {
+        assert_eq!(core.pmpaddr_n[3].bits(), addr);
+    });
+}

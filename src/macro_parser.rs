@@ -2,8 +2,8 @@
 
 use quote::quote;
 use syn::{
-    Expr, Ident, Lit, LitStr, Path, Token,
-    parse::{Parse, ParseStream, Result},
+    Expr, ExprMacro, Ident, Lit, LitStr, Path, Token,
+    parse::{Parse, ParseStream, Parser, Result},
 };
 
 // ———————————————————————— Macro Syntax Definition ————————————————————————— //
@@ -160,18 +160,35 @@ impl Parse for AsmOperand {
 impl Parse for AsmInput {
     fn parse(input: ParseStream) -> Result<Self> {
         let mut template = Vec::new();
-        template.push(input.parse::<LitStr>()?);
-        while input.peek(Token![,]) && input.peek2(LitStr) {
-            input.parse::<Token![,]>()?;
-            template.push(input.parse::<LitStr>()?);
+
+        // Parse template items (either LitStr or concat!)
+        loop {
+            // Try to parse a template item
+            if input.peek(LitStr) {
+                template.push(input.parse::<LitStr>()?);
+            } else if input.peek(Ident) && input.fork().parse::<Ident>().unwrap() == "concat" {
+                let mac: ExprMacro = input.parse()?;
+                let concatenated = evaluate_concat(&mac)?;
+                template.push(LitStr::new(&concatenated, mac.mac.bang_token.span));
+            } else {
+                // Not a template item, exit loop
+                break;
+            }
+
+            // If there's a comma, consume it and continue to next iteration
+            // (the next iteration will check if it's another template item)
+            if input.peek(Token![,]) {
+                input.parse::<Token![,]>()?;
+            } else {
+                break;
+            }
         }
 
         let mut operands = Vec::new();
         let mut options = Vec::new();
 
         while !input.is_empty() {
-            // We parse at least one column, but more if needed
-            input.parse::<Token![,]>()?;
+            // Skip any leading commas
             while !input.is_empty() && input.peek(Token![,]) {
                 input.parse::<Token![,]>()?;
             }
@@ -199,6 +216,77 @@ impl Parse for AsmInput {
             options,
         })
     }
+}
+
+// —————————————————————————— Nested Macro Support —————————————————————————— //
+
+/// Evaluates a `concat!` macro call at proc macro expansion time
+fn evaluate_concat(mac: &ExprMacro) -> Result<String> {
+    // Verify this is actually a concat! macro
+    if !mac.mac.path.is_ident("concat") {
+        return Err(syn::Error::new_spanned(
+            &mac.mac.path,
+            "Expected `concat!` macro",
+        ));
+    }
+
+    let tokens = mac.mac.tokens.clone();
+    let parser = syn::punctuated::Punctuated::<Expr, Token![,]>::parse_terminated;
+    let exprs = parser.parse2(tokens)?;
+
+    let mut result = String::new();
+    for expr in exprs {
+        let part = match &expr {
+            Expr::Lit(lit) => match &lit.lit {
+                Lit::Str(s) => s.value(),
+                Lit::Int(i) => i.base10_digits().to_string(),
+                Lit::Char(c) => c.value().to_string(),
+                Lit::Bool(b) => b.value.to_string(),
+                _ => {
+                    return Err(syn::Error::new_spanned(
+                        lit,
+                        format!(
+                            "concat! only supports string, integer, char, and boolean literals, found: {}",
+                            quote::quote!(#lit)
+                        ),
+                    ));
+                }
+            },
+            Expr::Path(path) => {
+                // For paths like $idx, we need to get the identifier
+                if path.path.get_ident().is_some() {
+                    // This is a variable reference - we can't evaluate it at proc macro time
+                    return Err(syn::Error::new_spanned(
+                        path,
+                        format!(
+                            "concat! in proc macros requires all arguments to be literals, found variable: {}.",
+                            quote::quote!(#path)
+                        ),
+                    ));
+                } else {
+                    return Err(syn::Error::new_spanned(
+                        path,
+                        format!(
+                            "concat! only supports literals in proc macros, found path: {}",
+                            quote::quote!(#path)
+                        ),
+                    ));
+                }
+            }
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    &expr,
+                    format!(
+                        "concat! only supports literals in proc macros, found: {}",
+                        quote::quote!(#expr)
+                    ),
+                ));
+            }
+        };
+        result.push_str(&part);
+    }
+
+    Ok(result)
 }
 
 // ————————————————————————————————— Tests —————————————————————————————————— //
@@ -314,5 +402,59 @@ mod tests {
             options(nomem)
         };
         syn::parse2::<AsmInput>(tokens).unwrap();
+    }
+
+    #[test]
+    fn concat_evaluation() {
+        // Test simple string concatenation
+        let tokens = quote! { concat!("hello", " ", "world") };
+        let mac = syn::parse2::<ExprMacro>(tokens).unwrap();
+        let result = evaluate_concat(&mac).unwrap();
+        assert_eq!(result, "hello world");
+
+        // Test concatenation with integers
+        let tokens = quote! { concat!("csrw pmpaddr", 0, ", {addr}") };
+        let mac = syn::parse2::<ExprMacro>(tokens).unwrap();
+        let result = evaluate_concat(&mac).unwrap();
+        assert_eq!(result, "csrw pmpaddr0, {addr}");
+
+        // Test concatenation with multiple integers
+        let tokens = quote! { concat!("test", 1, 2, 3) };
+        let mac = syn::parse2::<ExprMacro>(tokens).unwrap();
+        let result = evaluate_concat(&mac).unwrap();
+        assert_eq!(result, "test123");
+
+        // Test concatenation with char
+        let tokens = quote! { concat!("value: ", 'x') };
+        let mac = syn::parse2::<ExprMacro>(tokens).unwrap();
+        let result = evaluate_concat(&mac).unwrap();
+        assert_eq!(result, "value: x");
+    }
+
+    #[test]
+    fn concat_in_asm_input() {
+        // Test concat! as template
+        let tokens = quote! {
+            concat!("csrw pmpaddr", 0, ", {addr}"),
+            addr = in(reg) pmpaddr,
+            options(nomem)
+        };
+        let parsed = syn::parse2::<AsmInput>(tokens).unwrap();
+        assert_eq!(parsed.template.len(), 1);
+        assert_eq!(parsed.template[0].value(), "csrw pmpaddr0, {addr}");
+        assert_eq!(parsed.operands.len(), 2);
+
+        // Test multiple template strings, some with concat!
+        let tokens = quote! {
+            "li {tmp}, 0x80",
+            concat!("csrw pmpaddr", 1, ", {addr}"),
+            addr = in(reg) pmpaddr,
+            tmp = out(reg) _,
+            options(nomem)
+        };
+        let parsed = syn::parse2::<AsmInput>(tokens).unwrap();
+        assert_eq!(parsed.template.len(), 2);
+        assert_eq!(parsed.template[0].value(), "li {tmp}, 0x80");
+        assert_eq!(parsed.template[1].value(), "csrw pmpaddr1, {addr}");
     }
 }
