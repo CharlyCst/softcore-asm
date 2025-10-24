@@ -283,6 +283,17 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
                 core.set(#rd, val as u64);
             })
         }
+        "lw" => {
+            check_nb_op(instr, 2)?;
+            let rd = emit_reg(&ops[0]);
+            let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
+            Ok(quote! {
+                let addr = core::ptr::with_exposed_provenance::<i32>(
+                    #imm.wrapping_add(core.get(#rs1)) as usize);
+                let val = core::ptr::read(addr);
+                core.set(#rd, val as i64 as u64);
+            })
+        }
         "lhu" => {
             check_nb_op(instr, 2)?;
             let rd = emit_reg(&ops[0]);
@@ -294,6 +305,17 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
                 core.set(#rd, val as u64);
             })
         }
+        "lh" => {
+            check_nb_op(instr, 2)?;
+            let rd = emit_reg(&ops[0]);
+            let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
+            Ok(quote! {
+                let addr = core::ptr::with_exposed_provenance::<i16>(
+                    #imm.wrapping_add(core.get(#rs1)) as usize);
+                let val = core::ptr::read(addr);
+                core.set(#rd, val as i64 as u64);
+            })
+        }
         "lbu" => {
             check_nb_op(instr, 2)?;
             let rd = emit_reg(&ops[0]);
@@ -303,6 +325,17 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
                     #imm.wrapping_add(core.get(#rs1)) as usize);
                 let val = core::ptr::read(addr);
                 core.set(#rd, val as u64);
+            })
+        }
+        "lb" => {
+            check_nb_op(instr, 2)?;
+            let rd = emit_reg(&ops[0]);
+            let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
+            Ok(quote! {
+                let addr = core::ptr::with_exposed_provenance::<i8>(
+                    #imm.wrapping_add(core.get(#rs1)) as usize);
+                let val = core::ptr::read(addr);
+                core.set(#rd, val as i64 as u64);
             })
         }
         "sd" => {
@@ -669,13 +702,12 @@ mod tests {
         assert_eq!(result.1.to_string(), "reg :: X8");
 
         // Test missing immediate
-        let result =emit_immediate_offset("(x1)", &consts).unwrap(); 
+        let result = emit_immediate_offset("(x1)", &consts).unwrap();
         assert_eq!(result.0.to_string(), "0u64");
         assert_eq!(result.1.to_string(), "reg :: X1");
 
         // Test invalid formats - missing parentheses
         assert!(emit_immediate_offset("123x1", &consts).is_err());
-
 
         // Test invalid formats - missing register
         assert!(emit_immediate_offset("123()", &consts).is_err());

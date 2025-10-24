@@ -112,6 +112,27 @@ fn load() {
         assert_eq!(vals[1], val1 as u32);
         assert_eq!(vals[2], val2 as u32);
 
+        // Words (signed)
+        let mut vals: [i32; 3] = [0xbeef0000u32 as i32, 0xfbadbed0u32 as i32, 0x01234567];
+        let vals_addr = vals.as_mut_ptr().offset(1) as usize;
+        let val0: u64;
+        let val1: u64;
+        let val2: u64;
+
+        rasm!(
+            "lw {val0}, -4({addr})
+             lw {val1}, 0({addr})
+             lw {val2},  4({addr})",
+            val0 = out(reg) val0,
+            val1 = out(reg) val1,
+            val2 = out(reg) val2,
+            addr = in(reg) vals_addr
+        );
+
+        assert_eq!(vals[0] as i64 as u64, val0);
+        assert_eq!(vals[1] as i64 as u64, val1);
+        assert_eq!(vals[2] as i64 as u64, val2);
+
         // Half words
         let mut vals: [u16; 3] = [0xbeef, 0x0bad, 0x0123];
         let vals_addr = vals.as_mut_ptr().offset(1) as usize;
@@ -133,6 +154,27 @@ fn load() {
         assert_eq!(vals[1], val1 as u16);
         assert_eq!(vals[2], val2 as u16);
 
+        // Half words (signed)
+        let mut vals: [i16; 3] = [0xbeef_u16 as i16, 0xfbad_u16 as i16, 0x0123];
+        let vals_addr = vals.as_mut_ptr().offset(1) as usize;
+        let val0: u64;
+        let val1: u64;
+        let val2: u64;
+
+        rasm!(
+            "lh {val0}, -2({addr})
+             lh {val1}, 0({addr})
+             lh {val2},  2({addr})",
+            val0 = out(reg) val0,
+            val1 = out(reg) val1,
+            val2 = out(reg) val2,
+            addr = in(reg) vals_addr
+        );
+
+        assert_eq!(vals[0] as i64 as u64, val0);
+        assert_eq!(vals[1] as i64 as u64, val1);
+        assert_eq!(vals[2] as i64 as u64, val2);
+
         // Bytes
         let mut vals: [u8; 3] = [0xbe, 0x0b, 0x01];
         let vals_addr = vals.as_mut_ptr().offset(1) as usize;
@@ -153,6 +195,27 @@ fn load() {
         assert_eq!(vals[0], val0 as u8);
         assert_eq!(vals[1], val1 as u8);
         assert_eq!(vals[2], val2 as u8);
+
+        // Bytes (signed)
+        let mut vals: [i8; 3] = [0xbe_u8 as i8, 0xfb_u8 as i8, 0x01];
+        let vals_addr = vals.as_mut_ptr().offset(1) as usize;
+        let val0: u64;
+        let val1: u64;
+        let val2: u64;
+
+        rasm!(
+            "lb {val0}, -1({addr})
+             lb {val1}, 0({addr})
+             lb {val2},  1({addr})",
+            val0 = out(reg) val0,
+            val1 = out(reg) val1,
+            val2 = out(reg) val2,
+            addr = in(reg) vals_addr
+        );
+
+        assert_eq!(vals[0] as i64 as u64, val0);
+        assert_eq!(vals[1] as i64 as u64, val1);
+        assert_eq!(vals[2] as i64 as u64, val2);
     }
 }
 
