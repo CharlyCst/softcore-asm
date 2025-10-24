@@ -375,6 +375,13 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
         "mulhsu" => mul!(instr, 0b010),
         "mulhu" => mul!(instr, 0b011),
 
+        // Jumps (control-flow not emulated)
+        "jr" => {
+            check_nb_op(instr, 1)?;
+            let rs1 = emit_reg(&ops[0]);
+            Ok(quote! { core.execute(ast::JR((#rs1))) })
+        }
+
         // System
         "mret" => {
             check_nb_op(instr, 0)?;
@@ -395,6 +402,30 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
         "wfi" => {
             check_nb_op(instr, 0)?;
             Ok(quote! { core.execute(ast::WFI(())); })
+        }
+        "fence.i" => {
+            check_nb_op(instr, 0)?;
+            Ok(quote! { core.execute(ast::FENCEI(())); })
+        }
+        "sfence.vma" => {
+            // The assembly can allow omitting some arguments
+            let (vaddr, asid) = if instr.operands.is_empty() {
+                (emit_reg("x0"), emit_reg("x0"))
+            } else if instr.operands.len() == 1 {
+                (emit_reg(&ops[0]), emit_reg("x0"))
+            } else {
+                check_nb_op(instr, 2)?;
+                (emit_reg(&ops[0]), emit_reg(&ops[1]))
+            };
+            Ok(quote! { core.execute(ast::SFENCE_VMA((#vaddr, #asid))) })
+        }
+        "hfence.gvma" => {
+            // Not currently supported in the Sail model, emit a no-op.
+            Ok(quote! {})
+        }
+        "hfence.vvma" => {
+            // Not currently supported in the Sail model, emit a no-op.
+            Ok(quote! {})
         }
 
         // Unknown instructions

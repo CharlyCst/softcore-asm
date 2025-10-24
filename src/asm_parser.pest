@@ -33,7 +33,7 @@ imm_off =  { expr ~ l_par ~ any_reg ~ r_par }
 // Assembly line
 comment    = _{ "//" ~ ANY* }
 label_id   = @{ (ASCII_ALPHANUMERIC | "_")+ }
-mnemonic   = @{ ASCII_ALPHANUMERIC+ }
+mnemonic   = @{ (ASCII_ALPHANUMERIC | "." )+ }
 operand    = @{ (!"//" ~ (ASCII_ALPHANUMERIC | "_" | "(" | ")" | "{" | "}" | "+" | "-" | "*" | "/"))+ }
 asm_instr  =  { mnemonic ~ (operand ~ ","?)* ~ comment? }
 asm_label  =  { label_id ~ ":" }
