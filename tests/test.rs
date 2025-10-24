@@ -803,3 +803,73 @@ fn directives() {
     assert_eq!(sum, 30);
     assert_eq!(diff, 0xfffffffffffffff6); // -10 in two's complement
 }
+
+#[test]
+fn shift_immediate() {
+    // Test slli (shift left logical immediate)
+    let value: u64 = 0b1010; // 10 in decimal
+    let result: u64;
+
+    rasm!(
+        "slli {out}, {val}, 2", // Shift left by 2 positions
+        out = out("x10") result,
+        val = in("x11") value,
+        options(nomem)
+    );
+
+    assert_eq!(result, 0b101000); // 40 in decimal
+
+    // Test srli (shift right logical immediate)
+    let value: u64 = 0b101000; // 40 in decimal
+    let result: u64;
+
+    rasm!(
+        "srli {out}, {val}, 2", // Shift right by 2 positions
+        out = out("x10") result,
+        val = in("x11") value,
+        options(nomem)
+    );
+
+    assert_eq!(result, 0b1010); // 10 in decimal
+
+    // Test srai (shift right arithmetic immediate) with positive number
+    let value: u64 = 0b101000; // 40 in decimal
+    let result: u64;
+
+    rasm!(
+        "srai {out}, {val}, 2", // Arithmetic shift right by 2
+        out = out("x10") result,
+        val = in("x11") value,
+        options(nomem)
+    );
+
+    assert_eq!(result, 0b1010); // 10 in decimal
+
+    // Test srai with negative number (sign extension)
+    let value: u64 = 0xFFFFFFFFFFFFFFF0u64; // -16 in two's complement
+    let result: u64;
+
+    rasm!(
+        "srai {out}, {val}, 2", // Arithmetic shift right by 2
+        out = out("x10") result,
+        val = in("x11") value,
+        options(nomem)
+    );
+
+    assert_eq!(result, 0xFFFFFFFFFFFFFFFCu64); // -4 in two's complement (sign extended)
+
+    // Test multiple shifts in sequence
+    let value: u64 = 100;
+    let result: u64;
+
+    rasm!(
+        "slli {tmp}, {val}, 3",  // 100 << 3 = 800
+        "srli {out}, {tmp}, 1",  // 800 >> 1 = 400
+        tmp = out("x12") _,
+        out = out("x10") result,
+        val = in("x11") value,
+        options(nomem)
+    );
+
+    assert_eq!(result, 400);
+}

@@ -35,6 +35,19 @@ macro_rules! itype {
     }};
 }
 
+/// Emit the tokens for an SHIFTIOP instruction
+macro_rules! shiftiop {
+    ($instr: ident, $op:path, $consts: ident) => {{
+        check_nb_op($instr, 3)?;
+        let rd = emit_reg(&$instr.operands[0]);
+        let rs1 = emit_reg(&$instr.operands[1]);
+        let imm = emit_integer(&$instr.operands[2], $consts);
+        Ok(quote! {
+            core.execute(ast::SHIFTIOP((bv(#imm), #rs1, #rd, sop::$op)));
+        })
+    }};
+}
+
 /// Emit the tokens for MUL type instructions
 macro_rules! mul {
     ($instr: ident, $op_bits: literal) => {{
@@ -368,6 +381,11 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
             };
             itype!(instr, ADDI, consts)
         }
+
+        // ShiftIOP
+        "slli" => shiftiop!(instr, SLLI, consts),
+        "srli" => shiftiop!(instr, SRLI, consts),
+        "srai" => shiftiop!(instr, SRAI, consts),
 
         // MUL
         "mul" => mul!(instr, 0b000),
