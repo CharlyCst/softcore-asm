@@ -763,3 +763,43 @@ fn inout_with_separate_variables() {
     assert_eq!(result_a, 150);
     assert_eq!(result_b, 275);
 }
+
+#[test]
+fn directives() {
+    // Test that .option directives are properly ignored
+    let value: u64 = 100;
+    let result: u64;
+
+    rasm!(
+        ".option push",
+        ".option norvc",
+        "addi {tmp}, {tmp}, 50",
+        ".option pop",
+        tmp = inout("x10") value => result,
+        options(nomem)
+    );
+
+    assert_eq!(result, 150);
+
+    // Test with multiple directives and instructions
+    let a: u64 = 10;
+    let b: u64 = 20;
+    let sum: u64;
+    let diff: u64;
+
+    rasm!(
+        ".option push",
+        "add {s}, {x}, {y}",
+        ".option norvc",
+        "sub {d}, {x}, {y}",
+        ".option pop",
+        s = out("x11") sum,
+        d = out("x12") diff,
+        x = in("x10") a,
+        y = in("x13") b,
+        options(nomem)
+    );
+
+    assert_eq!(sum, 30);
+    assert_eq!(diff, 0xfffffffffffffff6); // -10 in two's complement
+}

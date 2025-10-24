@@ -133,6 +133,7 @@ fn parse_assembly_line(pair: Pair<Rule>) -> Result<Option<AsmLine>> {
     match pairs.as_rule() {
         Rule::asm_instr => Ok(Some(AsmLine::Instr(parse_asm_instr(pairs)?))),
         Rule::asm_label => Ok(Some(AsmLine::Label(parse_asm_label(pairs)?))),
+        Rule::directive => Ok(None), // Directives are ignored
         Rule::empty_line => Ok(None),
         _ => Err(anyhow!(
             "Could not parse assembly line, got: {:?}",
@@ -321,5 +322,23 @@ mod tests {
         assert_eq!(parse("csrw mscratch, x1").unwrap(), csrw);
         assert_eq!(parse("   csrw  mscratch  , x1  ").unwrap(), csrw);
         assert_eq!(parse("csrw mscratch, x1 // Test comment").unwrap(), csrw);
+    }
+
+    #[test]
+    fn directive() {
+        let parse = |s: &'static str| {
+            let ast = PestParser::parse(Rule::asm_line, s)
+                .unwrap()
+                .next()
+                .unwrap();
+            parse_assembly_line(ast).unwrap()
+        };
+
+        // Directives should return None (be ignored)
+        assert_eq!(parse(".option push"), None);
+        assert_eq!(parse(".option pop"), None);
+        assert_eq!(parse(".option norvc"), None);
+        assert_eq!(parse("  .option push  "), None);
+        assert_eq!(parse(".option rvc"), None);
     }
 }
