@@ -28,7 +28,7 @@ expr        =  { atom ~ ( binop ~ atom )* }
 
 // Assembly constructs
 any_reg = @{ (ASCII_ALPHANUMERIC | "_" | "{" | "}" )+ }
-imm_off =  { expr ~ l_par ~ any_reg ~ r_par }
+imm_off =  { expr? ~ l_par ~ any_reg ~ r_par }
 
 // Assembly line
 comment    = _{ "//" ~ ANY* }

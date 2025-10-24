@@ -648,11 +648,14 @@ mod tests {
         assert_eq!(result.0.to_string(), "8u64");
         assert_eq!(result.1.to_string(), "reg :: X8");
 
+        // Test missing immediate
+        let result =emit_immediate_offset("(x1)", &consts).unwrap(); 
+        assert_eq!(result.0.to_string(), "0u64");
+        assert_eq!(result.1.to_string(), "reg :: X1");
+
         // Test invalid formats - missing parentheses
         assert!(emit_immediate_offset("123x1", &consts).is_err());
 
-        // Test invalid formats - missing immediate
-        assert!(emit_immediate_offset("(x1)", &consts).is_err());
 
         // Test invalid formats - missing register
         assert!(emit_immediate_offset("123()", &consts).is_err());

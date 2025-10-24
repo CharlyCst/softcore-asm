@@ -170,7 +170,12 @@ fn parse_asm_instr(pair: Pair<Rule>) -> Result<Instr> {
 /// Parses an immediate offset, such as `2*8(x1)`
 fn parse_immediate_offset(pair: Pair<'_, Rule>) -> Result<(Expr, &'_ str)> {
     let mut pairs = pair.into_inner();
-    let offset = parse_numeric_expr(pairs.next().unwrap())?;
+
+    // The offset if optional
+    let offset = match pairs.peek().unwrap().as_rule() {
+        Rule::expr => parse_numeric_expr(pairs.next().unwrap())?,
+        _ => Expr::Number(0),
+    };
     let register = parse_register(pairs.next().unwrap())?;
     Ok((offset.simplify(), register))
 }
@@ -189,6 +194,13 @@ fn parse_numeric_expr(pair: Pair<Rule>) -> Result<Expr> {
             .op(Op::prefix(unary_minus))
     });
 
+    // Return 0 for empty expressions
+    let pair = pair.into_inner();
+    let Some(_) = pair.peek() else {
+        return Ok(Expr::Number(0));
+    };
+
+    // Non-empty expression, parse with our expression parser
     let expr = NUM_EXPR_PARSER
         .map_primary(|atom| match atom.as_rule() {
             Rule::number => Ok(Expr::Number(parse_number(atom)?)),
@@ -209,7 +221,7 @@ fn parse_numeric_expr(pair: Pair<Rule>) -> Result<Expr> {
             Rule::unary_minus => Ok(Expr::Neg(Box::new(rhs?))),
             _ => Err(anyhow!("Unexpected prefix operator: {:?}", op.as_rule())),
         })
-        .parse(pair.into_inner())?;
+        .parse(pair)?;
 
     Ok(expr)
 }
