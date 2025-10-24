@@ -730,3 +730,36 @@ fn concat_macro_with_macro_rules() {
         assert_eq!(core.pmpaddr_n[7].bits(), 0x8000);
     });
 }
+
+#[test]
+fn inout_with_separate_variables() {
+    // Test the inout(reg) input_var => output_var syntax
+    // This should read from input_val and write to output_val
+    let input_val: u64 = 42;
+    let output_val: u64;
+
+    rasm!(
+        "addi {tmp}, {tmp}, 10",
+        tmp = inout("x31") input_val => output_val,
+        options(nomem)
+    );
+
+    assert_eq!(output_val, 52);
+
+    // Test with more complex operations
+    let a: u64 = 100;
+    let b: u64 = 200;
+    let result_a: u64;
+    let result_b: u64;
+
+    rasm!(
+        "addi {reg_a}, {reg_a}, 50",
+        "addi {reg_b}, {reg_b}, 75",
+        reg_a = inout("x10") a => result_a,
+        reg_b = inout("x11") b => result_b,
+        options(nomem)
+    );
+
+    assert_eq!(result_a, 150);
+    assert_eq!(result_b, 275);
+}

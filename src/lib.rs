@@ -48,10 +48,9 @@ fn as_to_rust<A: Arch>(asm: AsmInput, arch: A) -> Result<StructuredProgram<A>> {
 
 #[derive(Clone)]
 struct RegAllocation {
-    register: String, // "x1", "x2", etc.
-    expr: Expr,       // The Rust expression (e.g. variable) for the register
-    is_input: bool,
-    is_output: bool,
+    register: String,            // "x1", "x2", etc.
+    input_expr: Option<Expr>,    // The Rust expression for input (when Some)
+    output_expr: Option<Expr>,   // The Rust expression for output (when Some)
 }
 
 struct ParsedAssembly<A> {
@@ -89,9 +88,8 @@ fn build_operand_register_map<A>(
             match kind {
                 OperandKind::Register(KindRegister {
                     reg,
-                    expr,
-                    is_input,
-                    is_output,
+                    input_expr,
+                    output_expr,
                 }) => {
                     let ident = if let Some(ident) = ident {
                         ident.to_string()
@@ -115,9 +113,8 @@ fn build_operand_register_map<A>(
 
                     let regalloc = RegAllocation {
                         register: register.clone(),
-                        expr: expr.clone(),
-                        is_input: *is_input,
-                        is_output: *is_output,
+                        input_expr: input_expr.clone(),
+                        output_expr: output_expr.clone(),
                     };
 
                     placeholder_instantiation.insert(ident.to_string(), register);
@@ -203,9 +200,8 @@ fn generate_softcore_code<A: Arch>(prog: StructuredProgram<A>) -> proc_macro2::T
 
     // Generate setup code for input registers
     for reg_alloc in &prog.ctx.register_allocation {
-        if reg_alloc.is_input {
+        if let Some(expr) = &reg_alloc.input_expr {
             let reg = riscv::emit_reg(&reg_alloc.register);
-            let expr = &reg_alloc.expr;
             setup_code.push(quote! {
                 core.set(#reg, #expr as u64);
             });
@@ -217,9 +213,8 @@ fn generate_softcore_code<A: Arch>(prog: StructuredProgram<A>) -> proc_macro2::T
 
     // Generate extraction code for output registers
     for reg_alloc in &prog.ctx.register_allocation {
-        if reg_alloc.is_output {
+        if let Some(expr) = &reg_alloc.output_expr {
             let reg = riscv::emit_reg(&reg_alloc.register);
-            let expr = &reg_alloc.expr;
 
             // Skip assigning values to `_`
             if let Expr::Infer(_) = expr {

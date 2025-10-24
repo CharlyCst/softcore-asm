@@ -40,9 +40,8 @@ pub enum OperandKind {
 pub struct KindRegister {
     #[allow(unused)]
     pub reg: RegisterKind,
-    pub expr: Expr,
-    pub is_input: bool,
-    pub is_output: bool,
+    pub input_expr: Option<Expr>,
+    pub output_expr: Option<Expr>,
 }
 
 #[derive(Clone)]
@@ -96,11 +95,6 @@ impl Parse for RegisterOperand {
 }
 
 fn parse_operand_kind_register(direction: Direction, input: &ParseStream) -> Result<OperandKind> {
-    let (is_input, is_output) = match direction {
-        Direction::In => (true, false),
-        Direction::Out => (false, true),
-        Direction::InOut => (true, true),
-    };
     let content;
     syn::parenthesized!(content in input);
     let reg = if content.peek(Ident) {
@@ -116,13 +110,31 @@ fn parse_operand_kind_register(direction: Direction, input: &ParseStream) -> Res
     } else {
         return Err(input.error("Invalid register name"));
     };
-    let expr = input.parse::<Expr>()?;
+
+    // Parse the first expression
+    let first_expr = input.parse::<Expr>()?;
+
+    // Check for => (fat arrow) - only valid for inout
+    let (input_expr, output_expr) = if input.peek(Token![=>]) {
+        if !matches!(direction, Direction::InOut) {
+            return Err(input.error("=> syntax only valid for inout operands"));
+        }
+        input.parse::<Token![=>]>()?;
+        let second_expr = input.parse::<Expr>()?;
+        (Some(first_expr), Some(second_expr))
+    } else {
+        // Single expression - use based on direction
+        match direction {
+            Direction::In => (Some(first_expr), None),
+            Direction::Out => (None, Some(first_expr)),
+            Direction::InOut => (Some(first_expr.clone()), Some(first_expr)),
+        }
+    };
 
     Ok(OperandKind::Register(KindRegister {
         reg,
-        expr,
-        is_input,
-        is_output,
+        input_expr,
+        output_expr,
     }))
 }
 
@@ -304,8 +316,8 @@ mod tests {
             .unwrap()
             .into_register()
             .unwrap();
-        assert!(parsed.is_input);
-        assert!(!parsed.is_output);
+        assert!(parsed.input_expr.is_some());
+        assert!(parsed.output_expr.is_none());
 
         // Testing output direction
         let tokens = quote! {out(reg) foo};
@@ -313,8 +325,8 @@ mod tests {
             .unwrap()
             .into_register()
             .unwrap();
-        assert!(!parsed.is_input);
-        assert!(parsed.is_output);
+        assert!(parsed.input_expr.is_none());
+        assert!(parsed.output_expr.is_some());
 
         // Testing inout direction
         let tokens = quote! {inout(reg) foo};
@@ -322,8 +334,8 @@ mod tests {
             .unwrap()
             .into_register()
             .unwrap();
-        assert!(parsed.is_input);
-        assert!(parsed.is_output);
+        assert!(parsed.input_expr.is_some());
+        assert!(parsed.output_expr.is_some());
     }
 
     #[test]
@@ -345,7 +357,9 @@ mod tests {
             .unwrap()
             .into_register()
             .unwrap();
-        match parsed.expr {
+        assert!(parsed.input_expr.is_some());
+        assert!(parsed.output_expr.is_none());
+        match parsed.input_expr.unwrap() {
             Expr::Path(path) => {
                 let ident = path.path.get_ident().unwrap();
                 assert_eq!(ident.to_string(), "foo");
@@ -358,13 +372,53 @@ mod tests {
             .unwrap()
             .into_register()
             .unwrap();
-        match parsed.expr {
+        assert!(parsed.input_expr.is_some());
+        assert!(parsed.output_expr.is_none());
+        match parsed.input_expr.unwrap() {
             Expr::Lit(syn::ExprLit {
                 lit: syn::Lit::Int(_),
                 ..
             }) => {}
             _ => panic!("Expected an integer literal"),
         }
+    }
+
+    #[test]
+    fn register_operand_inout_with_arrow() {
+        // Test inout with separate input and output variables
+        let tokens = quote! {inout(reg) input_var => output_var};
+        let parsed = syn::parse2::<RegisterOperand>(tokens)
+            .unwrap()
+            .into_register()
+            .unwrap();
+
+        assert!(parsed.input_expr.is_some());
+        assert!(parsed.output_expr.is_some());
+
+        // Check input expression
+        match parsed.input_expr.as_ref().unwrap() {
+            Expr::Path(path) => {
+                let ident = path.path.get_ident().unwrap();
+                assert_eq!(ident.to_string(), "input_var");
+            }
+            _ => panic!("Expected input_var identifier"),
+        }
+
+        // Check output expression
+        match parsed.output_expr.as_ref().unwrap() {
+            Expr::Path(path) => {
+                let ident = path.path.get_ident().unwrap();
+                assert_eq!(ident.to_string(), "output_var");
+            }
+            _ => panic!("Expected output_var identifier"),
+        }
+
+        // Test that => is only valid for inout
+        let tokens = quote! {in(reg) input_var => output_var};
+        assert!(syn::parse2::<RegisterOperand>(tokens).is_err());
+
+        let tokens = quote! {out(reg) input_var => output_var};
+        assert!(syn::parse2::<RegisterOperand>(tokens).is_err());
     }
 
     #[test]
