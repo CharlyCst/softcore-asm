@@ -377,9 +377,11 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
 
         // Jumps (control-flow not emulated)
         "jr" => {
+            // Pseudo-instruction for `jalr x0, 0(rs1)`
             check_nb_op(instr, 1)?;
             let rs1 = emit_reg(&ops[0]);
-            Ok(quote! { core.execute(ast::JR((#rs1))) })
+            let rd = emit_reg("x0");
+            Ok(quote! { core.execute(ast::JALR((bv(0), #rs1, #rd)))})
         }
 
         // System
