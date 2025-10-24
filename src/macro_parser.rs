@@ -220,6 +220,43 @@ impl Parse for AsmInput {
 
 // —————————————————————————— Nested Macro Support —————————————————————————— //
 
+/// Evaluates a single literal expression to a string
+fn evaluate_literal_expr(expr: &Expr) -> Result<String> {
+    match expr {
+        Expr::Lit(lit) => match &lit.lit {
+            Lit::Str(s) => Ok(s.value()),
+            Lit::Int(i) => Ok(i.base10_digits().to_string()),
+            Lit::Char(c) => Ok(c.value().to_string()),
+            Lit::Bool(b) => Ok(b.value.to_string()),
+            _ => Err(syn::Error::new_spanned(
+                lit,
+                format!(
+                    "concat! only supports string, integer, char, and boolean literals, found: {}",
+                    quote::quote!(#lit)
+                ),
+            )),
+        },
+        Expr::Group(group) => {
+            // Handle grouped expressions from macro_rules! substitution
+            evaluate_literal_expr(&group.expr)
+        }
+        Expr::Path(path) => Err(syn::Error::new_spanned(
+            path,
+            format!(
+                "concat! in proc macros requires all arguments to be literals, found variable: {}",
+                quote::quote!(#path)
+            ),
+        )),
+        _ => Err(syn::Error::new_spanned(
+            expr,
+            format!(
+                "concat! only supports literals in proc macros, found: {}",
+                quote::quote!(#expr)
+            ),
+        )),
+    }
+}
+
 /// Evaluates a `concat!` macro call at proc macro expansion time
 fn evaluate_concat(mac: &ExprMacro) -> Result<String> {
     // Verify this is actually a concat! macro
@@ -236,53 +273,7 @@ fn evaluate_concat(mac: &ExprMacro) -> Result<String> {
 
     let mut result = String::new();
     for expr in exprs {
-        let part = match &expr {
-            Expr::Lit(lit) => match &lit.lit {
-                Lit::Str(s) => s.value(),
-                Lit::Int(i) => i.base10_digits().to_string(),
-                Lit::Char(c) => c.value().to_string(),
-                Lit::Bool(b) => b.value.to_string(),
-                _ => {
-                    return Err(syn::Error::new_spanned(
-                        lit,
-                        format!(
-                            "concat! only supports string, integer, char, and boolean literals, found: {}",
-                            quote::quote!(#lit)
-                        ),
-                    ));
-                }
-            },
-            Expr::Path(path) => {
-                // For paths like $idx, we need to get the identifier
-                if path.path.get_ident().is_some() {
-                    // This is a variable reference - we can't evaluate it at proc macro time
-                    return Err(syn::Error::new_spanned(
-                        path,
-                        format!(
-                            "concat! in proc macros requires all arguments to be literals, found variable: {}.",
-                            quote::quote!(#path)
-                        ),
-                    ));
-                } else {
-                    return Err(syn::Error::new_spanned(
-                        path,
-                        format!(
-                            "concat! only supports literals in proc macros, found path: {}",
-                            quote::quote!(#path)
-                        ),
-                    ));
-                }
-            }
-            _ => {
-                return Err(syn::Error::new_spanned(
-                    &expr,
-                    format!(
-                        "concat! only supports literals in proc macros, found: {}",
-                        quote::quote!(#expr)
-                    ),
-                ));
-            }
-        };
+        let part = evaluate_literal_expr(&expr)?;
         result.push_str(&part);
     }
 

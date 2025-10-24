@@ -684,3 +684,49 @@ fn concat_macro_mixed_templates() {
         assert_eq!(core.pmpaddr_n[3].bits(), addr);
     });
 }
+
+#[test]
+fn concat_macro_with_macro_rules() {
+    // Test three levels of macro nesting:
+    // 1. macro_rules! generates the call to rasm!
+    // 2. rasm! wraps softcore_asm_rv64::asm!
+    // 3. asm! uses concat! in the template
+
+    macro_rules! asm_write_pmpaddr {
+        ($idx:literal, $addr:expr) => {
+            rasm!(
+                concat!("csrw pmpaddr", $idx, ", {addr}"),
+                addr = in(reg) $addr,
+                options(nomem)
+            )
+        };
+    }
+
+    let pmpaddr_val: u64 = 0x5000;
+
+    // Use the macro_rules to write to different pmpaddr registers
+    let index = 4;
+    match index {
+        0 => asm_write_pmpaddr!(0, pmpaddr_val),
+        1 => asm_write_pmpaddr!(1, pmpaddr_val),
+        2 => asm_write_pmpaddr!(2, pmpaddr_val),
+        3 => asm_write_pmpaddr!(3, pmpaddr_val),
+        4 => asm_write_pmpaddr!(4, pmpaddr_val),
+        _ => panic!("Unsupported index"),
+    }
+
+    SOFT_CORE.with_borrow_mut(|core| {
+        assert_eq!(core.pmpaddr_n[4].bits(), pmpaddr_val);
+    });
+
+    // Test writing to multiple registers using the macro
+    asm_write_pmpaddr!(5, 0x6000);
+    asm_write_pmpaddr!(6, 0x7000);
+    asm_write_pmpaddr!(7, 0x8000);
+
+    SOFT_CORE.with_borrow_mut(|core| {
+        assert_eq!(core.pmpaddr_n[5].bits(), 0x6000);
+        assert_eq!(core.pmpaddr_n[6].bits(), 0x7000);
+        assert_eq!(core.pmpaddr_n[7].bits(), 0x8000);
+    });
+}
