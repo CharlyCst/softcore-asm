@@ -186,7 +186,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "softcore-asm-rv64"
+name = "softcore-asm-macro"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -195,8 +195,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "regex",
- "softcore-rv64",
  "syn",
+]
+
+[[package]]
+name = "softcore-asm-rv64"
+version = "0.1.0"
+dependencies = [
+ "softcore-asm-macro",
+ "softcore-rv64",
 ]
 
 [[package]]

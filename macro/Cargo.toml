@@ -1,20 +1,24 @@
 [package]
-name = "softcore-asm-rv64"
+name = "softcore-asm-macro"
 version = "0.1.0"
 edition = "2024"
 authors = ["Charly Castes"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/CharlyCst/softcore-rs"
-description = "A macro to facilitate the use of softcore-rv64"
+description = "A procedural macro to translate assembly into pure Rust code"
 keywords = ["riscv", "specification", "emulator"]
 categories = ["emulators", "development-tools::testing"]
 readme = "README.md"
 
 [lib]
+proc-macro = true
 
 [dependencies]
-softcore-rv64 = "0.5.0"
-softcore-asm-macro = { path = "macro/", version = "0.1.0" }
+syn = { version = "2.0", features = ["full"] }
+quote = "1.0"
+proc-macro2 = "1.0"
+anyhow = "=1.0.99"
+regex = "1.11.2"
+pest = "2.8.2"
+pest_derive = "2.8.2"
 
-[workspace]
-members = [ "macro" ]

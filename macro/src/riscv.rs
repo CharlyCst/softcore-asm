@@ -434,6 +434,13 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
             let rd = emit_reg("x0");
             Ok(quote! { core.execute(ast::JALR((bv(0), #rs1, #rd)))})
         }
+        "call" => {
+            check_nb_op(instr, 1)?;
+            let fun = emit_symbol_name(&ops[0], syms);
+            // TODO: we should ask the user to add an annotation if needed!
+            // The annotation should have the ABI and the arity.
+            Ok(quote! { AsmCallable::<Core>::call_from_assembly(#fun as extern "C" fn(), core) })
+        }
 
         // System
         "mret" => {
@@ -595,6 +602,18 @@ fn emit_immediate_offset(
 fn emit_symbol_addr(sym: &str, syms: &HashMap<String, Path>) -> TokenStream {
     if let Some(path) = syms.get(sym) {
         quote! {(&raw const #path) as *const _}
+    } else {
+        Error::new(
+            Span::call_site(),
+            format!("Could not find a symbol named '{sym}'"),
+        )
+        .to_compile_error()
+    }
+}
+
+fn emit_symbol_name(sym: &str, syms: &HashMap<String, Path>) -> TokenStream {
+    if let Some(path) = syms.get(sym) {
+        quote! { #path }
     } else {
         Error::new(
             Span::call_site(),

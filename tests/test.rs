@@ -1,4 +1,5 @@
 use core::cell::RefCell;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread_local;
 
 use softcore_rv64::prelude::bv;
@@ -611,6 +612,26 @@ fn branches() {
         result = out(reg) result,
     );
     assert_eq!(result, 2);
+}
+
+/// Calls rust furnctions from inline assembly.
+///
+/// The calls should automatically pass the expected function arguments based on the SYSTEM-V ABI.
+#[test]
+fn fn_call_from_assembly() {
+    /// An atomic variable incremented from the Rust function "foo".
+    static BAR: AtomicBool = AtomicBool::new(false);
+
+    /// A Rust function, to be called from assembly
+    extern "C" fn foo() {
+        BAR.store(true, Ordering::SeqCst);
+    }
+
+    rasm!(
+        "call {foo}",
+        foo = sym foo,
+    );
+    assert!(BAR.load(Ordering::SeqCst));
 }
 
 #[test]
