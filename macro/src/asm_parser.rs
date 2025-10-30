@@ -34,6 +34,12 @@ pub enum AsmLine {
 pub struct Instr {
     pub mnemonic: String,
     pub operands: Vec<String>,
+    pub attributes: Vec<Attribute>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Attribute {
+    Abi,
 }
 
 /// An expression, which can contain other expressions.
@@ -103,12 +109,40 @@ impl Expr {
 
 // ——————————————————————————————— Public API ——————————————————————————————— //
 
-/// Parses a line of assembly.
-///
-/// Note that the line can be a comment or empty, in which case None is returned.
-pub fn into_asm_line(input: &str) -> Result<Option<AsmLine>> {
-    let pairs = PestParser::parse(Rule::asm_line, input)?.next().unwrap();
-    parse_assembly_line(pairs)
+/// Parses a list of assembly instructions
+pub fn parse_instructions(assembly_template: &[String]) -> Result<Vec<AsmLine>> {
+    let asm_text = assembly_template.join("\n");
+    let mut result = Vec::new();
+    let mut pending_attributes = Vec::new();
+
+    for line in asm_text.lines() {
+        let pairs = PestParser::parse(Rule::asm_line, line.trim())?
+            .next()
+            .unwrap();
+        match parse_assembly_line(pairs)? {
+            ParsedLine::Attribute(attr) => {
+                // Accumulate attributes for the next instruction
+                pending_attributes.push(attr);
+            }
+            ParsedLine::AsmLine(AsmLine::Instr(mut instr)) => {
+                // Attach accumulated attributes to this instruction
+                instr.attributes = pending_attributes;
+                pending_attributes = Vec::new();
+                result.push(AsmLine::Instr(instr));
+            }
+            ParsedLine::AsmLine(asm_line) => {
+                // Labels and other assembly lines don't get attributes
+                // If there were pending attributes, they are lost
+                pending_attributes.clear();
+                result.push(asm_line);
+            }
+            ParsedLine::Skip => {
+                // Directives, empty lines, etc. - don't clear pending attributes
+            }
+        }
+    }
+
+    Ok(result)
 }
 
 /// Parses an immediate offset, such as `2*8(x1)`
@@ -128,13 +162,24 @@ pub fn into_numeric_expr(input: &str) -> Result<Expr> {
 
 // —————————————————————————————— Typed Parser —————————————————————————————— //
 
-fn parse_assembly_line(pair: Pair<Rule>) -> Result<Option<AsmLine>> {
+#[derive(Debug, PartialEq, Eq)]
+enum ParsedLine {
+    AsmLine(AsmLine),
+    Attribute(Attribute),
+    Skip, // Directives, empty lines, comments
+}
+
+fn parse_assembly_line(pair: Pair<Rule>) -> Result<ParsedLine> {
     let pairs = pair.into_inner().next().unwrap();
     match pairs.as_rule() {
-        Rule::asm_instr => Ok(Some(AsmLine::Instr(parse_asm_instr(pairs)?))),
-        Rule::asm_label => Ok(Some(AsmLine::Label(parse_asm_label(pairs)?))),
-        Rule::directive => Ok(None), // Directives are ignored
-        Rule::empty_line => Ok(None),
+        Rule::asm_instr => Ok(ParsedLine::AsmLine(AsmLine::Instr(parse_asm_instr(
+            pairs,
+            vec![],
+        )?))),
+        Rule::asm_label => Ok(ParsedLine::AsmLine(AsmLine::Label(parse_asm_label(pairs)?))),
+        Rule::attr_line => Ok(ParsedLine::Attribute(parse_attribute(pairs)?)),
+        Rule::directive => Ok(ParsedLine::Skip),
+        Rule::empty_line => Ok(ParsedLine::Skip),
         _ => Err(anyhow!(
             "Could not parse assembly line, got: {:?}",
             pairs.as_rule()
@@ -150,7 +195,20 @@ fn parse_asm_label(pair: Pair<Rule>) -> Result<String> {
     }
 }
 
-fn parse_asm_instr(pair: Pair<Rule>) -> Result<Instr> {
+fn parse_attribute(pair: Pair<Rule>) -> Result<Attribute> {
+    // attr_line is: "//" ~ attribute
+    let pairs = pair.into_inner().next().unwrap();
+    match pairs.as_rule() {
+        Rule::attribute => {
+            // For now, return a placeholder Abi attribute
+            // Full parsing of attribute name and arguments will be implemented later
+            Ok(Attribute::Abi)
+        }
+        _ => Err(anyhow!("Expected an attribute, got: {:?}", pairs.as_rule())),
+    }
+}
+
+fn parse_asm_instr(pair: Pair<Rule>, attributes: Vec<Attribute>) -> Result<Instr> {
     let mut operands = Vec::new();
     let mut pairs = match pair.as_rule() {
         Rule::asm_instr => pair.into_inner(),
@@ -165,7 +223,11 @@ fn parse_asm_instr(pair: Pair<Rule>) -> Result<Instr> {
         }
     }
 
-    Ok(Instr { mnemonic, operands })
+    Ok(Instr {
+        mnemonic,
+        operands,
+        attributes,
+    })
 }
 
 /// Parses an immediate offset, such as `2*8(x1)`
@@ -307,21 +369,23 @@ mod tests {
         };
 
         // Test an instruction without operands
-        let wfi = AsmLine::Instr(Instr {
+        let wfi = ParsedLine::AsmLine(AsmLine::Instr(Instr {
             mnemonic: "wfi".to_string(),
             operands: vec![],
-        });
-        assert_eq!(parse("wfi").unwrap(), wfi);
-        assert_eq!(parse("wfi // This is a test comment").unwrap(), wfi);
+            attributes: vec![],
+        }));
+        assert_eq!(parse("wfi"), wfi);
+        assert_eq!(parse("wfi // This is a test comment"), wfi);
 
         // Test an instruction with operands
-        let csrw = AsmLine::Instr(Instr {
+        let csrw = ParsedLine::AsmLine(AsmLine::Instr(Instr {
             mnemonic: "csrw".to_string(),
             operands: vec!["mscratch".to_string(), "x1".to_string()],
-        });
-        assert_eq!(parse("csrw mscratch, x1").unwrap(), csrw);
-        assert_eq!(parse("   csrw  mscratch  , x1  ").unwrap(), csrw);
-        assert_eq!(parse("csrw mscratch, x1 // Test comment").unwrap(), csrw);
+            attributes: vec![],
+        }));
+        assert_eq!(parse("csrw mscratch, x1"), csrw);
+        assert_eq!(parse("   csrw  mscratch  , x1  "), csrw);
+        assert_eq!(parse("csrw mscratch, x1 // Test comment"), csrw);
     }
 
     #[test]
@@ -334,11 +398,86 @@ mod tests {
             parse_assembly_line(ast).unwrap()
         };
 
-        // Directives should return None (be ignored)
-        assert_eq!(parse(".option push"), None);
-        assert_eq!(parse(".option pop"), None);
-        assert_eq!(parse(".option norvc"), None);
-        assert_eq!(parse("  .option push  "), None);
-        assert_eq!(parse(".option rvc"), None);
+        // Directives should return Skip (be ignored)
+        assert_eq!(parse(".option push"), ParsedLine::Skip);
+        assert_eq!(parse(".option pop"), ParsedLine::Skip);
+        assert_eq!(parse(".option norvc"), ParsedLine::Skip);
+        assert_eq!(parse("  .option push  "), ParsedLine::Skip);
+        assert_eq!(parse(".option rvc"), ParsedLine::Skip);
+    }
+
+    #[test]
+    fn attributes_on_instructions() {
+        // Test that attributes are correctly attached to instructions
+        let code = vec!["// #[abi]".to_string(), "call foo".to_string()];
+        let result = parse_instructions(&code).unwrap();
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            AsmLine::Instr(instr) => {
+                assert_eq!(instr.mnemonic, "call");
+                assert_eq!(instr.operands, vec!["foo"]);
+                assert_eq!(instr.attributes.len(), 1);
+                assert_eq!(instr.attributes[0], Attribute::Abi);
+            }
+            _ => panic!("Expected instruction"),
+        }
+
+        // Test multiple attributes on a single instruction
+        let code = vec![
+            "// #[abi]".to_string(),
+            "// #[abi]".to_string(),
+            "// #[abi]".to_string(),
+            "csrw mscratch, x1".to_string(),
+        ];
+        let result = parse_instructions(&code).unwrap();
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            AsmLine::Instr(instr) => {
+                assert_eq!(instr.mnemonic, "csrw");
+                assert_eq!(instr.attributes.len(), 3);
+            }
+            _ => panic!("Expected instruction"),
+        }
+
+        // Test that attributes only apply to the next instruction
+        let code = vec![
+            "// #[abi]".to_string(),
+            "call foo".to_string(),
+            "call bar".to_string(),
+        ];
+        let result = parse_instructions(&code).unwrap();
+        assert_eq!(result.len(), 2);
+        match &result[0] {
+            AsmLine::Instr(instr) => {
+                assert_eq!(instr.mnemonic, "call");
+                assert_eq!(instr.operands, vec!["foo"]);
+                assert_eq!(instr.attributes.len(), 1);
+            }
+            _ => panic!("Expected instruction"),
+        }
+        match &result[1] {
+            AsmLine::Instr(instr) => {
+                assert_eq!(instr.mnemonic, "call");
+                assert_eq!(instr.operands, vec!["bar"]);
+                assert_eq!(instr.attributes.len(), 0);
+            }
+            _ => panic!("Expected instruction"),
+        }
+
+        // Test that empty lines/directives between attributes and instruction preserve attributes
+        let code = vec![
+            "// #[abi]".to_string(),
+            "".to_string(),
+            ".option norvc".to_string(),
+            "call foo".to_string(),
+        ];
+        let result = parse_instructions(&code).unwrap();
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            AsmLine::Instr(instr) => {
+                assert_eq!(instr.attributes.len(), 1);
+            }
+            _ => panic!("Expected instruction"),
+        }
     }
 }

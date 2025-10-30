@@ -14,7 +14,7 @@ mod relooper;
 mod riscv;
 
 use arch::Arch;
-use asm_parser::{AsmLine, Instr, into_asm_line};
+use asm_parser::{AsmLine, Instr, parse_instructions};
 use macro_parser::{AsmInput, AsmOperand, KindRegister, OperandKind, RegisterOperand};
 
 use crate::relooper::{Conditional, Shape, StructuredProgram};
@@ -48,27 +48,14 @@ fn as_to_rust<A: Arch>(asm: AsmInput, arch: A) -> Result<StructuredProgram<A>> {
 
 #[derive(Clone)]
 struct RegAllocation {
-    register: String,            // "x1", "x2", etc.
-    input_expr: Option<Expr>,    // The Rust expression for input (when Some)
-    output_expr: Option<Expr>,   // The Rust expression for output (when Some)
+    register: String,          // "x1", "x2", etc.
+    input_expr: Option<Expr>,  // The Rust expression for input (when Some)
+    output_expr: Option<Expr>, // The Rust expression for output (when Some)
 }
 
 struct ParsedAssembly<A> {
     asm_lines: Vec<AsmLine>,
     ctx: Context<A>,
-}
-
-fn parse_instructions(assembly_template: &[String]) -> Result<Vec<AsmLine>> {
-    let asm_text = assembly_template.join("\n");
-    asm_text
-        .lines()
-        .map(|line| into_asm_line(line.trim()))
-        .filter_map(|line| match line {
-            Ok(Some(asm)) => Some(Ok(asm)),
-            Ok(None) => None,
-            Err(err) => Some(Err(err)),
-        })
-        .collect::<Result<Vec<AsmLine>, _>>()
 }
 
 fn build_operand_register_map<A>(
