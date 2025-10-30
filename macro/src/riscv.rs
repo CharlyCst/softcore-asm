@@ -411,6 +411,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
             let instr = &Instr {
                 mnemonic: "addi".to_string(),
                 operands,
+                attributes: vec![],
             };
             itype!(instr, ADDI, consts)
         }

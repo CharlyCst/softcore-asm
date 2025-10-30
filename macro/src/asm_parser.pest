@@ -26,6 +26,14 @@ primary     = _{ hex_number | number | constant | l_par ~ expr ~ r_par }
 atom        = _{ unary_minus? ~ primary }
 expr        =  { atom ~ ( binop ~ atom )* }
 
+// Attributes
+attribute_arg_str = @{ "\"" ~ (ASCII_ALPHANUMERIC | "_")* ~ "\"" }
+attribute_arg_num = @{ ASCII_DIGIT+ }
+attribute_arg     = _{ number | attribute_arg_str }
+attribute_args    = _{ "(" ~ attribute_args* ~ ")" }
+attribute_name    = @{ (ASCII_ALPHANUMERIC | "_")+ }
+attribute         =  { "#[" ~ attribute_name ~ "]" }
+
 // Assembly constructs
 any_reg = @{ (ASCII_ALPHANUMERIC | "_" | "{" | "}" )+ }
 imm_off =  { expr? ~ l_par ~ any_reg ~ r_par }
@@ -38,5 +46,6 @@ operand    = @{ (!"//" ~ (ASCII_ALPHANUMERIC | "_" | "(" | ")" | "{" | "}" | "+"
 directive  =  { ".option" ~ var+ }
 asm_instr  =  { mnemonic ~ (operand ~ ","?)* ~ comment? }
 asm_label  =  { label_id ~ ":" }
+attr_line  =  { "//" ~ attribute }
 empty_line =  { WHITESPACE* ~ comment? }
-asm_line   =  { WHITESPACE* ~ (asm_label | directive | asm_instr | empty_line) }
+asm_line   =  { WHITESPACE* ~ (asm_label | directive | asm_instr | attr_line | empty_line) }
