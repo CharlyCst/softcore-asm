@@ -1,5 +1,5 @@
 use crate::arch::Arch;
-use crate::asm_parser::Expr as NumExpr;
+use crate::asm_parser::{Attribute, Expr as NumExpr};
 use crate::relooper::{Conditional, LabelTerminator};
 use crate::{Context, Instr, asm_parser};
 use proc_macro2::{Span, TokenStream};
@@ -438,9 +438,21 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
         "call" => {
             check_nb_op(instr, 1)?;
             let fun = emit_symbol_name(&ops[0], syms);
-            // TODO: we should ask the user to add an annotation if needed!
-            // The annotation should have the ABI and the arity.
-            Ok(quote! { AsmCallable::<Core>::call_from_assembly(#fun as extern "C" fn(), core) })
+            // Look for an ABI annotation (required for now as Rust can't infer the number of
+            // arguments (the arity) of the function when doing a cast.
+            let Some((abi, num_args)) = instr.attributes.iter().find_map(|attr| match attr {
+                Attribute::Abi { name, num_args } => Some((name, num_args)),
+            }) else {
+                return Err(Error::new(
+                    Span::call_site(),
+                    "Function calls ABI must be specified with the `abi` attribute. For instance: `// #[abi(\\\"C\\\", 4)]`.".to_string(),
+                ));
+            };
+            let placeholder = quote! { _ };
+            let args_placeholders = vec![placeholder; *num_args as usize];
+            Ok(
+                quote! { AsmCallable::<Core>::call_from_assembly(#fun as extern #abi fn(#(#args_placeholders ,)*), core) },
+            )
         }
 
         // System

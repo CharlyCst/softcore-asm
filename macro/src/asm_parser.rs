@@ -39,7 +39,7 @@ pub struct Instr {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Attribute {
-    Abi,
+    Abi { name: String, num_args: u64 },
 }
 
 /// An expression, which can contain other expressions.
@@ -200,12 +200,63 @@ fn parse_attribute(pair: Pair<Rule>) -> Result<Attribute> {
     let pairs = pair.into_inner().next().unwrap();
     match pairs.as_rule() {
         Rule::attribute => {
-            // For now, return a placeholder Abi attribute
-            // Full parsing of attribute name and arguments will be implemented later
-            Ok(Attribute::Abi)
+            let mut inner = pairs.into_inner();
+            let attr_name = inner.next().unwrap().as_str();
+
+            match attr_name {
+                "abi" => parse_abi_attribute(inner),
+                _ => Err(anyhow!("Unknown attribute: {}", attr_name)),
+            }
         }
         _ => Err(anyhow!("Expected an attribute, got: {:?}", pairs.as_rule())),
     }
+}
+
+/// Parses an ABI attribute.
+///
+/// An ABI attribute specifies the calling convention and number of arguments for a function call.
+/// It takes two arguments:
+/// - A string literal specifying the ABI name (e.g., "C", "Rust", "Custom")
+/// - A number literal specifying the number of arguments
+///
+/// Example: `#[abi("C", 4)]`
+///
+/// This would be used in assembly like:
+/// ```text
+/// // #[abi("C", 4)]
+/// call my_function
+/// ```
+fn parse_abi_attribute(mut args: pest::iterators::Pairs<Rule>) -> Result<Attribute> {
+    // First argument: string (ABI name)
+    let name_arg = args.next().ok_or_else(|| {
+        anyhow!("abi attribute requires arguments: abi(\"name\", num_args)")
+    })?;
+
+    let name = match name_arg.as_rule() {
+        Rule::attribute_arg_str => {
+            // Strip quotes from the string
+            let s = name_arg.as_str();
+            s.trim_matches('"').to_string()
+        }
+        _ => return Err(anyhow!("First argument of abi must be a string")),
+    };
+
+    // Second argument: number (number of arguments)
+    let num_arg = args.next().ok_or_else(|| {
+        anyhow!("abi attribute requires 2 arguments: abi(\"name\", num_args)")
+    })?;
+
+    let num_args = match num_arg.as_rule() {
+        Rule::attribute_arg_num => num_arg.as_str().parse::<u64>()?,
+        _ => return Err(anyhow!("Second argument of abi must be a number")),
+    };
+
+    // Ensure no extra arguments
+    if args.next().is_some() {
+        return Err(anyhow!("abi attribute takes exactly 2 arguments"));
+    }
+
+    Ok(Attribute::Abi { name, num_args })
 }
 
 fn parse_asm_instr(pair: Pair<Rule>, attributes: Vec<Attribute>) -> Result<Instr> {
@@ -409,7 +460,7 @@ mod tests {
     #[test]
     fn attributes_on_instructions() {
         // Test that attributes are correctly attached to instructions
-        let code = vec!["// #[abi]".to_string(), "call foo".to_string()];
+        let code = vec!["// #[abi(\"C\", 4)]".to_string(), "call foo".to_string()];
         let result = parse_instructions(&code).unwrap();
         assert_eq!(result.len(), 1);
         match &result[0] {
@@ -417,16 +468,22 @@ mod tests {
                 assert_eq!(instr.mnemonic, "call");
                 assert_eq!(instr.operands, vec!["foo"]);
                 assert_eq!(instr.attributes.len(), 1);
-                assert_eq!(instr.attributes[0], Attribute::Abi);
+                assert_eq!(
+                    instr.attributes[0],
+                    Attribute::Abi {
+                        name: "C".to_string(),
+                        num_args: 4
+                    }
+                );
             }
             _ => panic!("Expected instruction"),
         }
 
         // Test multiple attributes on a single instruction
         let code = vec![
-            "// #[abi]".to_string(),
-            "// #[abi]".to_string(),
-            "// #[abi]".to_string(),
+            "// #[abi(\"C\", 2)]".to_string(),
+            "// #[abi(\"Rust\", 3)]".to_string(),
+            "// #[abi(\"C\", 0)]".to_string(),
             "csrw mscratch, x1".to_string(),
         ];
         let result = parse_instructions(&code).unwrap();
@@ -441,7 +498,7 @@ mod tests {
 
         // Test that attributes only apply to the next instruction
         let code = vec![
-            "// #[abi]".to_string(),
+            "// #[abi(\"C\", 1)]".to_string(),
             "call foo".to_string(),
             "call bar".to_string(),
         ];
@@ -466,7 +523,7 @@ mod tests {
 
         // Test that empty lines/directives between attributes and instruction preserve attributes
         let code = vec![
-            "// #[abi]".to_string(),
+            "// #[abi(\"C\", 6)]".to_string(),
             "".to_string(),
             ".option norvc".to_string(),
             "call foo".to_string(),
@@ -479,5 +536,90 @@ mod tests {
             }
             _ => panic!("Expected instruction"),
         }
+    }
+
+    #[test]
+    fn abi_attribute_parsing() {
+        // Test basic abi attribute parsing
+        let code = vec!["// #[abi(\"C\", 4)]".to_string(), "call foo".to_string()];
+        let result = parse_instructions(&code).unwrap();
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            AsmLine::Instr(instr) => {
+                assert_eq!(instr.attributes.len(), 1);
+                match &instr.attributes[0] {
+                    Attribute::Abi { name, num_args } => {
+                        assert_eq!(name, "C");
+                        assert_eq!(*num_args, 4);
+                    }
+                }
+            }
+            _ => panic!("Expected instruction"),
+        }
+
+        // Test different ABI names
+        let code = vec![
+            "// #[abi(\"Rust\", 0)]".to_string(),
+            "call bar".to_string(),
+        ];
+        let result = parse_instructions(&code).unwrap();
+        match &result[0] {
+            AsmLine::Instr(instr) => match &instr.attributes[0] {
+                Attribute::Abi { name, num_args } => {
+                    assert_eq!(name, "Rust");
+                    assert_eq!(*num_args, 0);
+                }
+            },
+            _ => panic!("Expected instruction"),
+        }
+
+        // Test with larger number of arguments
+        let code = vec![
+            "// #[abi(\"Custom\", 100)]".to_string(),
+            "call baz".to_string(),
+        ];
+        let result = parse_instructions(&code).unwrap();
+        match &result[0] {
+            AsmLine::Instr(instr) => match &instr.attributes[0] {
+                Attribute::Abi { name, num_args } => {
+                    assert_eq!(name, "Custom");
+                    assert_eq!(*num_args, 100);
+                }
+            },
+            _ => panic!("Expected instruction"),
+        }
+    }
+
+    #[test]
+    fn abi_attribute_errors() {
+        // Test missing arguments
+        let code = vec!["// #[abi]".to_string(), "call foo".to_string()];
+        assert!(parse_instructions(&code).is_err());
+
+        // Test missing second argument
+        let code = vec!["// #[abi(\"C\")]".to_string(), "call foo".to_string()];
+        assert!(parse_instructions(&code).is_err());
+
+        // Test too many arguments
+        let code = vec![
+            "// #[abi(\"C\", 4, 5)]".to_string(),
+            "call foo".to_string(),
+        ];
+        assert!(parse_instructions(&code).is_err());
+
+        // Test wrong first argument type (should be string)
+        let code = vec!["// #[abi(42, 4)]".to_string(), "call foo".to_string()];
+        assert!(parse_instructions(&code).is_err());
+
+        // Test wrong second argument type (should be number)
+        let code = vec![
+            "// #[abi(\"C\", \"four\")]".to_string(),
+            "call foo".to_string(),
+        ];
+        assert!(parse_instructions(&code).is_err());
+
+        // Test unknown attribute
+        let code = vec!["// #[unknown]".to_string(), "call foo".to_string()];
+        assert!(parse_instructions(&code).is_err());
     }
 }

@@ -622,14 +622,35 @@ fn fn_call_from_assembly() {
     /// An atomic variable incremented from the Rust function "foo".
     static BAR: AtomicBool = AtomicBool::new(false);
 
-    /// A Rust function, to be called from assembly
+    /// A Rust function, to be called from assembly.
     extern "C" fn foo() {
         BAR.store(true, Ordering::SeqCst);
     }
 
+    /// Another Rust function, to be called from assembly, this time with some arguments.
+    extern "C" fn bar(a: u64, b: usize, c: u32) {
+        assert_eq!(a, 42);
+        assert_eq!(b, 54);
+        assert_eq!(c, u32::MAX);
+        BAR.store(true, Ordering::SeqCst);
+    }
+
     rasm!(
+        "// #[abi(\"C\", 0)]",
         "call {foo}",
         foo = sym foo,
+    );
+    assert!(BAR.load(Ordering::SeqCst));
+
+    // Now with a few arguments passed through registers
+    BAR.store(false, Ordering::SeqCst);
+    rasm!(
+        "// #[abi(\"C\", 3)]",
+        "call {bar}",
+        bar = sym bar,
+        in("a0") 42,
+        in("a1") 54,
+        in("a2") u64::MAX,
     );
     assert!(BAR.load(Ordering::SeqCst));
 }

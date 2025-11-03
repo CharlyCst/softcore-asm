@@ -29,10 +29,10 @@ expr        =  { atom ~ ( binop ~ atom )* }
 // Attributes
 attribute_arg_str = @{ "\"" ~ (ASCII_ALPHANUMERIC | "_")* ~ "\"" }
 attribute_arg_num = @{ ASCII_DIGIT+ }
-attribute_arg     = _{ number | attribute_arg_str }
-attribute_args    = _{ "(" ~ attribute_args* ~ ")" }
-attribute_name    = @{ (ASCII_ALPHANUMERIC | "_")+ }
-attribute         =  { "#[" ~ attribute_name ~ "]" }
+attribute_arg     = _{ attribute_arg_str | attribute_arg_num }
+attribute_args    = _{ "(" ~ attribute_arg ~ ("," ~ attribute_arg)* ~ ")" }
+attribute_name    =  { (ASCII_ALPHANUMERIC | "_")+ }
+attribute         =  { "#[" ~ attribute_name ~ attribute_args? ~ "]" }
 
 // Assembly constructs
 any_reg = @{ (ASCII_ALPHANUMERIC | "_" | "{" | "}" )+ }

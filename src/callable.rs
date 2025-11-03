@@ -16,6 +16,12 @@ impl FromRegister for u64 {
     }
 }
 
+impl FromRegister for u32 {
+    fn from_register(value: u64) -> Self {
+        value as u32
+    }
+}
+
 impl FromRegister for usize {
     fn from_register(value: u64) -> Self {
         value as usize
@@ -52,5 +58,19 @@ where
         let arg1 = T1::from_register(core.get(A0));
         let arg2 = T2::from_register(core.get(A1));
         self(arg1, arg2);
+    }
+}
+
+impl<T1, T2, T3> AsmCallable<Rv64Core> for extern "C" fn(T1, T2, T3)
+where
+    T1: FromRegister,
+    T2: FromRegister,
+    T3: FromRegister,
+{
+    fn call_from_assembly(self, core: &mut Rv64Core) {
+        let arg1 = T1::from_register(core.get(A0));
+        let arg2 = T2::from_register(core.get(A1));
+        let arg3 = T3::from_register(core.get(A2));
+        self(arg1, arg2, arg3);
     }
 }
