@@ -440,9 +440,15 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
             let fun = emit_symbol_name(&ops[0], syms);
             // Look for an ABI annotation (required for now as Rust can't infer the number of
             // arguments (the arity) of the function when doing a cast.
-            let Some((abi, num_args)) = instr.attributes.iter().find_map(|attr| match attr {
-                Attribute::Abi { name, num_args } => Some((name, num_args)),
-            }) else {
+            let Some((abi, num_args, noreturn)) =
+                instr.attributes.iter().find_map(|attr| match attr {
+                    Attribute::Abi {
+                        name,
+                        num_args,
+                        noreturn,
+                    } => Some((name, num_args, noreturn)),
+                })
+            else {
                 return Err(Error::new(
                     Span::call_site(),
                     "Function calls ABI must be specified with the `abi` attribute. For instance: `// #[abi(\\\"C\\\", 4)]`.".to_string(),
@@ -450,8 +456,13 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
             };
             let placeholder = quote! { _ };
             let args_placeholders = vec![placeholder; *num_args as usize];
+            let ret = if *noreturn {
+                quote! { -> ! }
+            } else {
+                quote! {}
+            };
             Ok(
-                quote! { AsmCallable::<Core>::call_from_assembly(#fun as extern #abi fn(#(#args_placeholders ,)*), core); },
+                quote! { AsmCallable::<Core>::call_from_assembly(#fun as extern #abi fn(#(#args_placeholders ,)*) #ret, core); },
             )
         }
 

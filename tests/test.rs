@@ -655,6 +655,30 @@ fn fn_call_from_assembly() {
     assert!(BAR.load(Ordering::SeqCst));
 }
 
+/// Tests that diverging functions (-> !) can be called from assembly.
+///
+/// The actual call is skipped at runtime via a branch, but the type system
+/// ensures the code compiles correctly with `extern "C" fn() -> !`.
+///
+/// Note: We can't use `#[should_panic]` here because `extern "C"` functions don't
+/// support unwinding - a panic inside them triggers an abort instead.
+#[test]
+fn fn_call_from_assembly_noreturn() {
+    #[allow(unused)]
+    extern "C" fn foo() -> ! {
+        loop {}
+    }
+
+    // Skip the call by branching over it, but the code still type-checks
+    rasm!(
+        "j skip",
+        "// #[abi(\"C\", 0, !)]",
+        "call {foo}",
+        "skip:",
+        foo = sym foo,
+    );
+}
+
 #[test]
 fn symbols() {
     static mut MY_SYMBOL: u64 = 0;
