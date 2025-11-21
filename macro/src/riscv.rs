@@ -451,7 +451,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
             let placeholder = quote! { _ };
             let args_placeholders = vec![placeholder; *num_args as usize];
             Ok(
-                quote! { AsmCallable::<Core>::call_from_assembly(#fun as extern #abi fn(#(#args_placeholders ,)*), core) },
+                quote! { AsmCallable::<Core>::call_from_assembly(#fun as extern #abi fn(#(#args_placeholders ,)*), core); },
             )
         }
 
