@@ -8,7 +8,6 @@ mod callable;
 /// CPU model.
 pub use softcore_asm_macro::asm;
 
-
 /// Softcore RV64
 ///
 /// A Rust model of a RISC-V 64 bits CPU, automatically translated from the official [Sail

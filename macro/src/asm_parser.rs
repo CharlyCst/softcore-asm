@@ -228,9 +228,9 @@ fn parse_attribute(pair: Pair<Rule>) -> Result<Attribute> {
 /// ```
 fn parse_abi_attribute(mut args: pest::iterators::Pairs<Rule>) -> Result<Attribute> {
     // First argument: string (ABI name)
-    let name_arg = args.next().ok_or_else(|| {
-        anyhow!("abi attribute requires arguments: abi(\"name\", num_args)")
-    })?;
+    let name_arg = args
+        .next()
+        .ok_or_else(|| anyhow!("abi attribute requires arguments: abi(\"name\", num_args)"))?;
 
     let name = match name_arg.as_rule() {
         Rule::attribute_arg_str => {
@@ -242,9 +242,9 @@ fn parse_abi_attribute(mut args: pest::iterators::Pairs<Rule>) -> Result<Attribu
     };
 
     // Second argument: number (number of arguments)
-    let num_arg = args.next().ok_or_else(|| {
-        anyhow!("abi attribute requires 2 arguments: abi(\"name\", num_args)")
-    })?;
+    let num_arg = args
+        .next()
+        .ok_or_else(|| anyhow!("abi attribute requires 2 arguments: abi(\"name\", num_args)"))?;
 
     let num_args = match num_arg.as_rule() {
         Rule::attribute_arg_num => num_arg.as_str().parse::<u64>()?,
@@ -558,10 +558,7 @@ mod tests {
         }
 
         // Test different ABI names
-        let code = vec![
-            "// #[abi(\"Rust\", 0)]".to_string(),
-            "call bar".to_string(),
-        ];
+        let code = vec!["// #[abi(\"Rust\", 0)]".to_string(), "call bar".to_string()];
         let result = parse_instructions(&code).unwrap();
         match &result[0] {
             AsmLine::Instr(instr) => match &instr.attributes[0] {
@@ -601,10 +598,7 @@ mod tests {
         assert!(parse_instructions(&code).is_err());
 
         // Test too many arguments
-        let code = vec![
-            "// #[abi(\"C\", 4, 5)]".to_string(),
-            "call foo".to_string(),
-        ];
+        let code = vec!["// #[abi(\"C\", 4, 5)]".to_string(), "call foo".to_string()];
         assert!(parse_instructions(&code).is_err());
 
         // Test wrong first argument type (should be string)
