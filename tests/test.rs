@@ -614,20 +614,17 @@ fn branches() {
     assert_eq!(result, 2);
 }
 
-/// Calls rust furnctions from inline assembly.
+/// Calls rust functions from inline assembly.
 ///
 /// The calls should automatically pass the expected function arguments based on the SYSTEM-V ABI.
 #[test]
 fn fn_call_from_assembly() {
-    /// An atomic variable incremented from the Rust function "foo".
     static BAR: AtomicBool = AtomicBool::new(false);
 
-    /// A Rust function, to be called from assembly.
     extern "C" fn foo() {
         BAR.store(true, Ordering::SeqCst);
     }
 
-    /// Another Rust function, to be called from assembly, this time with some arguments.
     extern "C" fn bar(a: u64, b: usize, c: u32) {
         assert_eq!(a, 42);
         assert_eq!(b, 54);
@@ -653,29 +650,22 @@ fn fn_call_from_assembly() {
         in("a2") u64::MAX,
     );
     assert!(BAR.load(Ordering::SeqCst));
-}
 
-/// Tests that diverging functions (-> !) can be called from assembly.
-///
-/// The actual call is skipped at runtime via a branch, but the type system
-/// ensures the code compiles correctly with `extern "C" fn() -> !`.
-///
-/// Note: We can't use `#[should_panic]` here because `extern "C"` functions don't
-/// support unwinding - a panic inside them triggers an abort instead.
-#[test]
-fn fn_call_from_assembly_noreturn() {
+    // Test diverging function (-> !). The actual call is skipped at runtime via a branch,
+    // but the type system ensures the code compiles correctly with `extern "C" fn() -> !`.
+    // Note: We can't use `#[should_panic]` because `extern "C"` functions don't support
+    // unwinding - a panic inside them triggers an abort instead.
     #[allow(unused)]
-    extern "C" fn foo() -> ! {
+    extern "C" fn baz() -> ! {
         loop {}
     }
 
-    // Skip the call by branching over it, but the code still type-checks
     rasm!(
         "j skip",
         "// #[abi(\"C\", 0, !)]",
-        "call {foo}",
+        "call {baz}",
         "skip:",
-        foo = sym foo,
+        baz = sym baz,
     );
 }
 
