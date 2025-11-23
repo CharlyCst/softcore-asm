@@ -8,6 +8,7 @@ use crate::arch::Arch;
 use crate::asm_parser::{AsmLine, Instr};
 use crate::{Context, ParsedAssembly};
 use anyhow::{Result, anyhow};
+use syn::Path;
 
 // —————————————————————————————— Relooper AST —————————————————————————————— //
 
@@ -19,6 +20,29 @@ impl BasicBlockID {
     /// Create a new basic block ID from an index
     pub fn new(id: usize) -> Self {
         BasicBlockID(id)
+    }
+}
+
+/// A call to a Rust function
+#[derive(Clone)]
+pub struct FnCall {
+    /// Path to the Rust function
+    pub fn_path: Path,
+    /// The function abi, often "C" as in `extern "C" fn foo()`
+    pub abi: String,
+    /// The number of arguments for that function
+    pub num_args: u64,
+    /// Wether the function returns, not not (i.e, returns the never type `-> !`)
+    pub noreturn: bool,
+}
+
+impl Debug for FnCall {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FnCall")
+            .field("abi", &self.abi)
+            .field("num_args", &self.num_args)
+            .field("noreturn", &self.noreturn)
+            .finish()
     }
 }
 
@@ -73,6 +97,8 @@ pub enum LabelTerminator {
     Branch { cond: Conditional, if_true: String },
     /// Unconditional jump to a label
     Jump(String),
+    /// Call to a Rust function
+    FnCall(FnCall),
 }
 
 /// Control flow terminator using resolved basic block IDs.
@@ -91,6 +117,8 @@ pub enum Terminator {
     },
     /// Unconditional jump to a basic block
     Jump(BasicBlockID),
+    /// Call to a Rust function
+    FnCall { next: BasicBlockID, call: FnCall },
 }
 
 /// Branch condition for conditional control flow.
@@ -111,6 +139,19 @@ pub enum Conditional {
     Ltu(String, String),
     /// Greater or equal comparison - unsigned (bgeu)
     Geu(String, String),
+}
+
+impl Conditional {
+    pub fn get_regs(&self) -> [&str; 2] {
+        match self {
+            Conditional::Eq(a, b) => [a, b],
+            Conditional::Ne(a, b) => [a, b],
+            Conditional::Lt(a, b) => [a, b],
+            Conditional::Ge(a, b) => [a, b],
+            Conditional::Ltu(a, b) => [a, b],
+            Conditional::Geu(a, b) => [a, b],
+        }
+    }
 }
 
 /// Collection of basic blocks with unresolved control flow.
@@ -159,6 +200,11 @@ pub enum Shape {
         /// Shape to execute after the conditional branches merge
         next: Option<Box<Shape>>,
     },
+    /// Call to a Rust function
+    FnCall {
+        next: Option<Box<Shape>>,
+        call: FnCall,
+    },
 }
 
 /// Final structured program representation.
@@ -187,7 +233,7 @@ impl<A: Arch> ParsedAssembly<A> {
         for line in self.asm_lines {
             match line {
                 AsmLine::Instr(instr) => {
-                    if let Some(terminator) = A::as_control_flow(&instr)? {
+                    if let Some(terminator) = A::as_control_flow(&instr, &self.ctx.symbols)? {
                         // This is a control flow instruction, terminate the basic block here
                         bb.terminator = terminator;
                         blocks.push(bb);
@@ -286,6 +332,13 @@ fn resolve_terminator(
                 Ok(Terminator::Jump(BasicBlockID::new(index + 1)))
             }
         }
+        LabelTerminator::FnCall(call) => {
+            // Resume to the next block after the function call
+            Ok(Terminator::FnCall {
+                next: BasicBlockID(index + 1),
+                call: call.clone(),
+            })
+        }
         LabelTerminator::Branch { cond, if_true } => match resolve_label(if_true, index, blocks) {
             Some(if_true) => Ok(Terminator::Branch {
                 cond: cond.clone(),
@@ -373,6 +426,7 @@ fn resolve_numeric_label_backward(
 // ———————————————————————— Structured Control Flow ————————————————————————— //
 
 use std::collections::{HashSet, VecDeque};
+use std::fmt::Debug;
 
 /// Find all blocks reachable from a starting block within the unprocessed set.
 ///
@@ -395,6 +449,9 @@ fn find_reachable(
             let block = &cfg[current.0];
             match &block.terminator {
                 Terminator::Done => {}
+                Terminator::FnCall { next, .. } => {
+                    queue.push_back(*next);
+                }
                 Terminator::Jump(target) => {
                     queue.push_back(*target);
                 }
@@ -444,6 +501,23 @@ fn detect_shape(
     //     return Shape::Loop { ... }
     // }
 
+    /// Helper function to recursively find the next node
+    fn find_next(
+        unprocessed: &HashSet<BasicBlockID>,
+        next: &BasicBlockID,
+        cfg: &[BasicBlock],
+    ) -> Result<Option<Box<Shape>>> {
+        // Simple linear flow
+        let mut remaining = unprocessed.clone();
+        remaining.remove(next);
+
+        if remaining.contains(next) {
+            Ok(Some(Box::new(reloop(*next, &remaining, cfg)?)))
+        } else {
+            Ok(None)
+        }
+    }
+
     let block = &cfg[entry.0];
 
     match &block.terminator {
@@ -455,17 +529,16 @@ fn detect_shape(
             })
         }
 
+        Terminator::FnCall { next, call } => {
+            let next = find_next(unprocessed, next, cfg)?;
+            Ok(Shape::FnCall {
+                next,
+                call: call.clone(),
+            })
+        }
+
         Terminator::Jump(target) => {
-            // Simple linear flow
-            let mut remaining = unprocessed.clone();
-            remaining.remove(&entry);
-
-            let next = if remaining.contains(target) {
-                Some(Box::new(reloop(*target, &remaining, cfg)?))
-            } else {
-                None
-            };
-
+            let next = find_next(unprocessed, target, cfg)?;
             Ok(Shape::Block {
                 instrs: block.instrs.clone(),
                 next,

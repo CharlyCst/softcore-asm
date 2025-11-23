@@ -182,13 +182,13 @@ fn parse_raw_assembly<A>(
 
 fn generate_softcore_code<A: Arch>(prog: StructuredProgram<A>) -> proc_macro2::TokenStream {
     let mut setup_code = Vec::new();
-    let mut extract_code = Vec::new();
+    let mut output_registers = Vec::new();
     let mut assignments = Vec::new();
 
     // Generate setup code for input registers
     for reg_alloc in &prog.ctx.register_allocation {
         if let Some(expr) = &reg_alloc.input_expr {
-            let reg = riscv::emit_reg(&reg_alloc.register);
+            let reg = A::emit_reg(&reg_alloc.register);
             setup_code.push(quote! {
                 core.set(#reg, #expr as u64);
             });
@@ -201,38 +201,60 @@ fn generate_softcore_code<A: Arch>(prog: StructuredProgram<A>) -> proc_macro2::T
     // Generate extraction code for output registers
     for reg_alloc in &prog.ctx.register_allocation {
         if let Some(expr) = &reg_alloc.output_expr {
-            let reg = riscv::emit_reg(&reg_alloc.register);
-
             // Skip assigning values to `_`
             if let Expr::Infer(_) = expr {
                 continue;
             }
 
-            extract_code.push(quote! { core.get(#reg) as _ });
+            output_registers.push(reg_alloc.register.as_str());
             assignments.push(expr);
         }
     }
 
-    // Get the softcore accessor
-    let softcore = prog.ctx.softcore;
-
-    if assignments.is_empty() {
-        // No assignment, simply execute the instructions
-        quote! {
-            #softcore(|core| {
-                #(#setup_code)*
-                #instruction_code
-            });
-        }
+    let prologue = if setup_code.is_empty() {
+        quote! {}
     } else {
-        // Return the assigned values from the closure, and assign them to the target variables
+        generate_softcore_block(quote! { #(#setup_code)* }, &[], &prog.ctx)
+    };
+    let epilogue = if output_registers.is_empty() {
+        quote! {}
+    } else {
+        let epilogue_block = generate_softcore_block(quote! {}, &output_registers, &prog.ctx);
         quote! {
-            (#(#assignments,)*) = #softcore(|core| {
-                #(#setup_code)*
-                #instruction_code
-                (#(#extract_code,)*)
-            });
+            (#(#assignments,)*) = #epilogue_block;
         }
+    };
+
+    // Assemble the whole program
+    quote! {
+        // We initialize the registers with variable values
+        #prologue
+        // We emit the Rust program that emulates the instructions
+        #instruction_code
+        // We extract the output registers into Rust variables
+        #epilogue
+    }
+}
+
+fn generate_softcore_block<A: Arch>(
+    instruction_code: proc_macro2::TokenStream,
+    output_registers: &[&str],
+    ctx: &Context<A>,
+) -> proc_macro2::TokenStream {
+    // Get the softcore accessor
+    let softcore = &ctx.softcore;
+
+    let mut regs = Vec::with_capacity(output_registers.len());
+    for r in output_registers {
+        let r = A::emit_reg(r);
+        regs.push(quote! { core.get(#r) as _ });
+    }
+
+    quote! {
+        #softcore(|core| {
+            #instruction_code
+            (#(#regs,)*)
+        });
     }
 }
 
@@ -247,10 +269,60 @@ fn generate_structured_code<A: Arch>(shape: &Shape, ctx: &Context<A>) -> proc_ma
                 };
                 code.extend(tokens);
             }
-            if let Some(next_shape) = next {
-                code.extend(generate_structured_code(next_shape, ctx))
+            let block = generate_softcore_block(code, &[], ctx);
+            let next = if let Some(next_shape) = next {
+                generate_structured_code(next_shape, ctx)
+            } else {
+                quote! {}
+            };
+
+            quote! {
+                // The instructions from that block
+                #block
+
+                // The rest of the code
+                #next
             }
-            code
+        }
+        relooper::Shape::FnCall { next, call } => {
+            let fun = &call.fn_path;
+            let abi = &call.abi;
+
+            // Create identifiers for the function arguments
+            let mut args = Vec::new();
+            for i in 0..call.num_args {
+                let arg = proc_macro2::Ident::new(&format!("arg{i}"), Span::call_site());
+                args.push(quote! { #arg });
+            }
+
+            // Create the function type
+            let args_placeholders = vec![quote! { _ }; call.num_args as usize];
+            let ret = if call.noreturn {
+                quote! { -> ! }
+            } else {
+                quote! {}
+            };
+
+            // Create a block to extract the arguments, and the next block to execute
+            let extract_args_block =
+                generate_softcore_block(quote! {}, A::abi_registers(abi, call.num_args), ctx);
+            let next = next.as_ref().map(|x| generate_structured_code(x, ctx));
+
+            quote! {
+                // Extract the arguments from the registers
+                let (#(#args,)*) = #extract_args_block;
+
+                // We try to coerce the function to force a type-check.
+                // In particular, we want to be sure no values are returned, as we do not
+                // handle return value yet (besite returning `!`).
+                let _: extern #abi fn(#(#args_placeholders ,)*) #ret = #fun;
+
+                // Actually call the function
+                #fun(#(#args,)*);
+
+                // We are done, continue
+                #next
+            }
         }
         relooper::Shape::If {
             cond,
@@ -258,7 +330,15 @@ fn generate_structured_code<A: Arch>(shape: &Shape, ctx: &Context<A>) -> proc_ma
             else_branch,
             next,
         } => {
-            let cond = A::emit_cond(cond);
+            // First, write a softcore block to extract the necessary registers
+            let [left, right] = cond.get_regs();
+            let extract_regs = generate_softcore_block(quote! {}, &[left, right], ctx);
+
+            // Build the condition
+            let left = quote! { left };
+            let right = quote! { right };
+            let cond = generade_cond(cond, &left, &right, ctx);
+
             let then_branch = generate_structured_code(then_branch, ctx);
             let else_branch = else_branch
                 .as_ref()
@@ -266,6 +346,7 @@ fn generate_structured_code<A: Arch>(shape: &Shape, ctx: &Context<A>) -> proc_ma
             let next = next.as_ref().map(|x| generate_structured_code(x, ctx));
 
             quote! {
+                let (#left, #right): (u64, u64) = #extract_regs;
                 if #cond {
                     #then_branch
                 } else {
@@ -274,6 +355,22 @@ fn generate_structured_code<A: Arch>(shape: &Shape, ctx: &Context<A>) -> proc_ma
                 #next
             }
         }
+    }
+}
+
+fn generade_cond<A: Arch>(
+    cond: &Conditional,
+    left: &proc_macro2::TokenStream,
+    right: &proc_macro2::TokenStream,
+    _ctx: &Context<A>,
+) -> proc_macro2::TokenStream {
+    match cond {
+        Conditional::Eq(_, _) => quote! { #left == #right },
+        Conditional::Ne(_, _) => quote! { #left != #right },
+        Conditional::Lt(_, _) => quote! { #left <  #right },
+        Conditional::Ge(_, _) => quote! { #left >= #right },
+        Conditional::Ltu(_, _) => todo!("LTU conditionnal not supported"),
+        Conditional::Geu(_, _) => todo!("GEU conditionnal not supported"),
     }
 }
 

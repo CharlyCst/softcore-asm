@@ -624,14 +624,6 @@ fn fn_call_from_assembly() {
     extern "C" fn foo() {
         BAR.store(true, Ordering::SeqCst);
     }
-
-    extern "C" fn bar(a: u64, b: usize, c: u32) {
-        assert_eq!(a, 42);
-        assert_eq!(b, 54);
-        assert_eq!(c, u32::MAX);
-        BAR.store(true, Ordering::SeqCst);
-    }
-
     rasm!(
         "// #[abi(\"C\", 0)]",
         "call {foo}",
@@ -640,6 +632,12 @@ fn fn_call_from_assembly() {
     assert!(BAR.load(Ordering::SeqCst));
 
     // Now with a few arguments passed through registers
+    extern "C" fn bar(a: u64, b: usize, c: u32) {
+        assert_eq!(a, 42);
+        assert_eq!(b, 54);
+        assert_eq!(c, u32::MAX);
+        BAR.store(true, Ordering::SeqCst);
+    }
     BAR.store(false, Ordering::SeqCst);
     rasm!(
         "// #[abi(\"C\", 3)]",
@@ -657,16 +655,35 @@ fn fn_call_from_assembly() {
     // unwinding - a panic inside them triggers an abort instead.
     #[allow(unused)]
     extern "C" fn baz() -> ! {
-        loop {}
+        panic!("Should not be called");
     }
-
     rasm!(
-        "j skip",
+        // We use a conditionnal jump to prevent the macro from removing dead code
+        "beq x0, x0, skip",
         "// #[abi(\"C\", 0, !)]",
         "call {baz}",
         "skip:",
         baz = sym baz,
     );
+
+
+    // Test nesting calls into assembly macro.
+    // In this case, the Rust function called will itself call assembly.
+    extern "C" fn buzz() {
+        rasm!(
+            "csrw mscratch, {x}",
+            x = in(reg) 42
+        );
+    }
+    let value: usize;
+    rasm!(
+        "// #[abi(\"C\", 0)]",
+        "call {buzz}",
+        "csrr {x}, mscratch",
+        x = out(reg) value,
+        buzz = sym buzz,
+    );
+    assert_eq!(value, 42);
 }
 
 #[test]

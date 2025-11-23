@@ -1,6 +1,6 @@
 use crate::arch::Arch;
 use crate::asm_parser::{Attribute, Expr as NumExpr};
-use crate::relooper::{Conditional, LabelTerminator};
+use crate::relooper::{Conditional, FnCall, LabelTerminator};
 use crate::{Context, Instr, asm_parser};
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
@@ -13,9 +13,9 @@ use syn::{Error, Expr, Path};
 macro_rules! rtype {
     ($instr: ident, $op:path) => {{
         check_nb_op($instr, 3)?;
-        let rd = emit_reg(&$instr.operands[0]);
-        let rs1 = emit_reg(&$instr.operands[1]);
-        let rs2 = emit_reg(&$instr.operands[2]);
+        let rd = Riscv::emit_reg(&$instr.operands[0]);
+        let rs1 = Riscv::emit_reg(&$instr.operands[1]);
+        let rs2 = Riscv::emit_reg(&$instr.operands[2]);
         Ok(quote! {
             core.execute(ast::RTYPE((#rs2, #rs1, #rd, rop::$op)));
         })
@@ -26,8 +26,8 @@ macro_rules! rtype {
 macro_rules! itype {
     ($instr: ident, $op:path, $consts: ident) => {{
         check_nb_op($instr, 3)?;
-        let rd = emit_reg(&$instr.operands[0]);
-        let rs1 = emit_reg(&$instr.operands[1]);
+        let rd = Riscv::emit_reg(&$instr.operands[0]);
+        let rs1 = Riscv::emit_reg(&$instr.operands[1]);
         let imm = emit_integer(&$instr.operands[2], $consts);
         Ok(quote! {
             core.execute(ast::ITYPE((bv(#imm), #rs1, #rd, iop::$op)));
@@ -39,8 +39,8 @@ macro_rules! itype {
 macro_rules! shiftiop {
     ($instr: ident, $op:path, $consts: ident) => {{
         check_nb_op($instr, 3)?;
-        let rd = emit_reg(&$instr.operands[0]);
-        let rs1 = emit_reg(&$instr.operands[1]);
+        let rd = Riscv::emit_reg(&$instr.operands[0]);
+        let rs1 = Riscv::emit_reg(&$instr.operands[1]);
         let imm = emit_integer(&$instr.operands[2], $consts);
         Ok(quote! {
             core.execute(ast::SHIFTIOP((bv(#imm), #rs1, #rd, sop::$op)));
@@ -52,9 +52,9 @@ macro_rules! shiftiop {
 macro_rules! mul {
     ($instr: ident, $op_bits: literal) => {{
         check_nb_op($instr, 3)?;
-        let rd = emit_reg(&$instr.operands[0]);
-        let rs1 = emit_reg(&$instr.operands[1]);
-        let rs2 = emit_reg(&$instr.operands[2]);
+        let rd = Riscv::emit_reg(&$instr.operands[0]);
+        let rs1 = Riscv::emit_reg(&$instr.operands[1]);
+        let rs2 = Riscv::emit_reg(&$instr.operands[2]);
         Ok(quote! {
             core.execute(ast::MUL((#rs2, #rs1, #rd, raw::encdec_mul_op_backwards(bv::<3>($op_bits)))));
         })
@@ -66,7 +66,10 @@ macro_rules! mul {
 pub struct Riscv {}
 
 impl Arch for Riscv {
-    fn as_control_flow(instr: &Instr) -> Result<Option<LabelTerminator>, Error> {
+    fn as_control_flow(
+        instr: &Instr,
+        symbols: &HashMap<String, Path>,
+    ) -> Result<Option<LabelTerminator>, Error> {
         let ops = &instr.operands;
         match instr.mnemonic.as_str() {
             "beq" => {
@@ -158,31 +161,94 @@ impl Arch for Riscv {
                 check_nb_op(instr, 1)?;
                 Ok(Some(LabelTerminator::Jump(ops[0].to_string())))
             }
+            "call" => {
+                check_nb_op(instr, 1)?;
+
+                // Get the function to call from the list of symbols
+                let sym = &ops[0];
+                let Some(path) = symbols.get(sym) else {
+                    return Err(Error::new(
+                        Span::call_site(),
+                        format!("Could not find function a symbol named '{sym}'"),
+                    ));
+                };
+
+                // Look for an ABI annotation (required for now as Rust can't infer the number of
+                // arguments (the arity) of the function when doing a cast.
+                let Some((abi_name, num_args, noreturn)) =
+                    instr.attributes.iter().find_map(|attr| match attr {
+                        Attribute::Abi {
+                            name,
+                            num_args,
+                            noreturn,
+                        } => Some((name, num_args, noreturn)),
+                    })
+                else {
+                    return Err(Error::new(
+                    Span::call_site(),
+                    "Function calls ABI must be specified with the `abi` attribute. For instance: `// #[abi(\\\"C\\\", 4)]`.".to_string(),
+                ));
+                };
+                Ok(Some(LabelTerminator::FnCall(FnCall {
+                    fn_path: path.clone(),
+                    abi: abi_name.clone(),
+                    num_args: *num_args,
+                    noreturn: *noreturn,
+                })))
+            }
             _ => Ok(None),
         }
     }
 
-    fn emit_cond(cond: &Conditional) -> TokenStream {
-        let (reg_a, reg_b) = match cond {
-            Conditional::Eq(a, b) => (a, b),
-            Conditional::Ne(a, b) => (a, b),
-            Conditional::Lt(a, b) => (a, b),
-            Conditional::Ge(a, b) => (a, b),
-            Conditional::Ltu(a, b) => (a, b),
-            Conditional::Geu(a, b) => (a, b),
-        };
-        let reg_a = emit_reg(reg_a);
-        let reg_b = emit_reg(reg_b);
-        let a = quote! { core.get(#reg_a) };
-        let b = quote! { core.get(#reg_b) };
-        match cond {
-            Conditional::Eq(_, _) => quote! { #a == #b },
-            Conditional::Ne(_, _) => quote! { #a != #b },
-            Conditional::Lt(_, _) => quote! { #a <  #b },
-            Conditional::Ge(_, _) => quote! { #a >= #b },
-            Conditional::Ltu(_, _) => todo!("LTU conditionnal not supported"),
-            Conditional::Geu(_, _) => todo!("GEU conditionnal not supported"),
+    /// Create tokens corresponding to the provided register.
+    fn emit_reg(reg: &str) -> TokenStream {
+        match reg {
+            "x0" | "zero" => quote! {reg::X0},
+            "x1" | "ra" => quote! {reg::X1},
+            "x2" | "sp" => quote! {reg::X2},
+            "x3" | "gp" => quote! {reg::X3},
+            "x4" | "tp" => quote! {reg::X4},
+            "x5" | "t0" => quote! {reg::X5},
+            "x6" | "t1" => quote! {reg::X6},
+            "x7" | "t2" => quote! {reg::X7},
+            "x8" | "s0" | "fp" => quote! {reg::X8},
+            "x9" | "s1" => quote! {reg::X9},
+            "x10" | "a0" => quote! {reg::X10},
+            "x11" | "a1" => quote! {reg::X11},
+            "x12" | "a2" => quote! {reg::X12},
+            "x13" | "a3" => quote! {reg::X13},
+            "x14" | "a4" => quote! {reg::X14},
+            "x15" | "a5" => quote! {reg::X15},
+            "x16" | "a6" => quote! {reg::X16},
+            "x17" | "a7" => quote! {reg::X17},
+            "x18" | "s2" => quote! {reg::X18},
+            "x19" | "s3" => quote! {reg::X19},
+            "x20" | "s4" => quote! {reg::X20},
+            "x21" | "s5" => quote! {reg::X21},
+            "x22" | "s6" => quote! {reg::X22},
+            "x23" | "s7" => quote! {reg::X23},
+            "x24" | "s8" => quote! {reg::X24},
+            "x25" | "s9" => quote! {reg::X25},
+            "x26" | "s10" => quote! {reg::X26},
+            "x27" | "s11" => quote! {reg::X27},
+            "x28" | "t3" => quote! {reg::X28},
+            "x29" | "t4" => quote! {reg::X29},
+            "x30" | "t5" => quote! {reg::X30},
+            "x31" | "t6" => quote! {reg::X31},
+            _ => {
+                Error::new(Span::call_site(), format!("Unknown register: {reg}")).to_compile_error()
+            }
         }
+    }
+
+    fn abi_registers(abi: &str, nb_args: u64) -> &[&str] {
+        static ARGS_ABI: [&str; 8] = ["a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7"];
+        
+        assert_eq!(abi, "C", "Unsupported ABI: '{abi}'");
+        assert!(nb_args <= 8, "Support at most 8 arguments");
+
+        let nb_args = nb_args as usize;
+        &ARGS_ABI[0..nb_args]
     }
 }
 
@@ -194,51 +260,51 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
         // CSR operations
         "csrrw" => {
             check_nb_op(instr, 3)?;
-            let rd = emit_reg(&ops[0]);
+            let rd = Riscv::emit_reg(&ops[0]);
             let csr = emit_csr(&ops[1]);
-            let rs1 = emit_reg(&ops[2]);
+            let rs1 = Riscv::emit_reg(&ops[2]);
             Ok(quote! { core.csrrw(#rd, #csr, #rs1).unwrap(); })
         }
         "csrrs" => {
             check_nb_op(instr, 3)?;
-            let rd = emit_reg(&ops[0]);
+            let rd = Riscv::emit_reg(&ops[0]);
             let csr = emit_csr(&ops[1]);
-            let rs1 = emit_reg(&ops[2]);
+            let rs1 = Riscv::emit_reg(&ops[2]);
             Ok(quote! { core.csrrs(#rd, #csr, #rs1).unwrap(); })
         }
         "csrrc" => {
             check_nb_op(instr, 3)?;
-            let rd = emit_reg(&ops[0]);
+            let rd = Riscv::emit_reg(&ops[0]);
             let csr = emit_csr(&ops[1]);
-            let rs1 = emit_reg(&ops[2]);
+            let rs1 = Riscv::emit_reg(&ops[2]);
             Ok(quote! { core.csrrc(#rd, #csr, #rs1).unwrap(); })
         }
         "csrr" => {
             check_nb_op(instr, 2)?;
-            let rd = emit_reg(&ops[0]);
+            let rd = Riscv::emit_reg(&ops[0]);
             let csr = emit_csr(&ops[1]);
-            let rs1 = emit_reg("x0");
+            let rs1 = Riscv::emit_reg("x0");
             Ok(quote! { core.csrrs(#rd, #csr, #rs1).unwrap(); })
         }
         "csrw" => {
             check_nb_op(instr, 2)?;
-            let rd = emit_reg("x0");
+            let rd = Riscv::emit_reg("x0");
             let csr = emit_csr(&ops[0]);
-            let rs1 = emit_reg(&ops[1]);
+            let rs1 = Riscv::emit_reg(&ops[1]);
             Ok(quote! { core.csrrw(#rd, #csr, #rs1).unwrap(); })
         }
         "csrs" => {
             check_nb_op(instr, 2)?;
-            let rd = emit_reg("x0");
+            let rd = Riscv::emit_reg("x0");
             let csr = emit_csr(&ops[0]);
-            let rs1 = emit_reg(&ops[1]);
+            let rs1 = Riscv::emit_reg(&ops[1]);
             Ok(quote! { core.csrrs(#rd, #csr, #rs1).unwrap(); })
         }
         "csrc" => {
             check_nb_op(instr, 2)?;
-            let rd = emit_reg("x0");
+            let rd = Riscv::emit_reg("x0");
             let csr = emit_csr(&ops[0]);
-            let rs1 = emit_reg(&ops[1]);
+            let rs1 = Riscv::emit_reg(&ops[1]);
             Ok(quote! { core.csrrc(#rd, #csr, #rs1).unwrap(); })
         }
 
@@ -247,7 +313,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
             // Load immediate is a pseudo-instruction.
             // Here we implement it in Rust directly, rather than as a combination of lui and addi.
             check_nb_op(instr, 2)?;
-            let rd = emit_reg(&ops[0]);
+            let rd = Riscv::emit_reg(&ops[0]);
             let value = emit_integer(&ops[1], consts);
             Ok(quote! { core.set(#rd, #value as u64); })
         }
@@ -257,13 +323,13 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
             // We can't use the same trick here, because we don't want to rely on the linker for
             // that. Instrad, we use Rust to find the address of the symbol directly.
             check_nb_op(instr, 2)?;
-            let rd = emit_reg(&ops[0]);
+            let rd = Riscv::emit_reg(&ops[0]);
             let sym_addr = emit_symbol_addr(&ops[1], syms);
             Ok(quote! { core.set(#rd, #sym_addr as u64); })
         }
         "ld" => {
             check_nb_op(instr, 2)?;
-            let rd = emit_reg(&ops[0]);
+            let rd = Riscv::emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(quote! {
                 let addr = core::ptr::with_exposed_provenance::<u64>(
@@ -274,7 +340,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
         }
         "lwu" => {
             check_nb_op(instr, 2)?;
-            let rd = emit_reg(&ops[0]);
+            let rd = Riscv::emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(quote! {
                 let addr = core::ptr::with_exposed_provenance::<u32>(
@@ -285,7 +351,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
         }
         "lw" => {
             check_nb_op(instr, 2)?;
-            let rd = emit_reg(&ops[0]);
+            let rd = Riscv::emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(quote! {
                 let addr = core::ptr::with_exposed_provenance::<i32>(
@@ -296,7 +362,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
         }
         "lhu" => {
             check_nb_op(instr, 2)?;
-            let rd = emit_reg(&ops[0]);
+            let rd = Riscv::emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(quote! {
                 let addr = core::ptr::with_exposed_provenance::<u16>(
@@ -307,7 +373,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
         }
         "lh" => {
             check_nb_op(instr, 2)?;
-            let rd = emit_reg(&ops[0]);
+            let rd = Riscv::emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(quote! {
                 let addr = core::ptr::with_exposed_provenance::<i16>(
@@ -318,7 +384,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
         }
         "lbu" => {
             check_nb_op(instr, 2)?;
-            let rd = emit_reg(&ops[0]);
+            let rd = Riscv::emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(quote! {
                 let addr = core::ptr::with_exposed_provenance::<u8>(
@@ -329,7 +395,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
         }
         "lb" => {
             check_nb_op(instr, 2)?;
-            let rd = emit_reg(&ops[0]);
+            let rd = Riscv::emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(quote! {
                 let addr = core::ptr::with_exposed_provenance::<i8>(
@@ -340,7 +406,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
         }
         "sd" => {
             check_nb_op(instr, 2)?;
-            let rs2 = emit_reg(&ops[0]);
+            let rs2 = Riscv::emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(quote! {
                 let val = core.get(#rs2);
@@ -352,7 +418,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
         }
         "sw" => {
             check_nb_op(instr, 2)?;
-            let rs2 = emit_reg(&ops[0]);
+            let rs2 = Riscv::emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(quote! {
                 let val = core.get(#rs2);
@@ -363,7 +429,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
         }
         "sh" => {
             check_nb_op(instr, 2)?;
-            let rs2 = emit_reg(&ops[0]);
+            let rs2 = Riscv::emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(quote! {
                 let val = core.get(#rs2);
@@ -374,7 +440,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
         }
         "sb" => {
             check_nb_op(instr, 2)?;
-            let rs2 = emit_reg(&ops[0]);
+            let rs2 = Riscv::emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(quote! {
                 let val = core.get(#rs2);
@@ -431,39 +497,9 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
         "jr" => {
             // Pseudo-instruction for `jalr x0, 0(rs1)`
             check_nb_op(instr, 1)?;
-            let rs1 = emit_reg(&ops[0]);
-            let rd = emit_reg("x0");
+            let rs1 = Riscv::emit_reg(&ops[0]);
+            let rd = Riscv::emit_reg("x0");
             Ok(quote! { core.execute(ast::JALR((bv(0), #rs1, #rd)))})
-        }
-        "call" => {
-            check_nb_op(instr, 1)?;
-            let fun = emit_symbol_name(&ops[0], syms);
-            // Look for an ABI annotation (required for now as Rust can't infer the number of
-            // arguments (the arity) of the function when doing a cast.
-            let Some((abi, num_args, noreturn)) =
-                instr.attributes.iter().find_map(|attr| match attr {
-                    Attribute::Abi {
-                        name,
-                        num_args,
-                        noreturn,
-                    } => Some((name, num_args, noreturn)),
-                })
-            else {
-                return Err(Error::new(
-                    Span::call_site(),
-                    "Function calls ABI must be specified with the `abi` attribute. For instance: `// #[abi(\\\"C\\\", 4)]`.".to_string(),
-                ));
-            };
-            let placeholder = quote! { _ };
-            let args_placeholders = vec![placeholder; *num_args as usize];
-            let ret = if *noreturn {
-                quote! { -> ! }
-            } else {
-                quote! {}
-            };
-            Ok(
-                quote! { AsmCallable::<Core>::call_from_assembly(#fun as extern #abi fn(#(#args_placeholders ,)*) #ret, core); },
-            )
         }
 
         // System
@@ -494,12 +530,12 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
         "sfence.vma" => {
             // The assembly can allow omitting some arguments
             let (vaddr, asid) = if instr.operands.is_empty() {
-                (emit_reg("x0"), emit_reg("x0"))
+                (Riscv::emit_reg("x0"), Riscv::emit_reg("x0"))
             } else if instr.operands.len() == 1 {
-                (emit_reg(&ops[0]), emit_reg("x0"))
+                (Riscv::emit_reg(&ops[0]), Riscv::emit_reg("x0"))
             } else {
                 check_nb_op(instr, 2)?;
-                (emit_reg(&ops[0]), emit_reg(&ops[1]))
+                (Riscv::emit_reg(&ops[0]), Riscv::emit_reg(&ops[1]))
             };
             Ok(quote! { core.execute(ast::SFENCE_VMA((#vaddr, #asid))) })
         }
@@ -535,45 +571,6 @@ fn check_nb_op(instr: &Instr, n: usize) -> Result<(), Error> {
                 instr.operands.as_slice()
             ),
         ))
-    }
-}
-
-/// Create tokens corresponding to the provided register.
-pub fn emit_reg(reg: &str) -> TokenStream {
-    match reg {
-        "x0" | "zero" => quote! {reg::X0},
-        "x1" | "ra" => quote! {reg::X1},
-        "x2" | "sp" => quote! {reg::X2},
-        "x3" | "gp" => quote! {reg::X3},
-        "x4" | "tp" => quote! {reg::X4},
-        "x5" | "t0" => quote! {reg::X5},
-        "x6" | "t1" => quote! {reg::X6},
-        "x7" | "t2" => quote! {reg::X7},
-        "x8" | "s0" | "fp" => quote! {reg::X8},
-        "x9" | "s1" => quote! {reg::X9},
-        "x10" | "a0" => quote! {reg::X10},
-        "x11" | "a1" => quote! {reg::X11},
-        "x12" | "a2" => quote! {reg::X12},
-        "x13" | "a3" => quote! {reg::X13},
-        "x14" | "a4" => quote! {reg::X14},
-        "x15" | "a5" => quote! {reg::X15},
-        "x16" | "a6" => quote! {reg::X16},
-        "x17" | "a7" => quote! {reg::X17},
-        "x18" | "s2" => quote! {reg::X18},
-        "x19" | "s3" => quote! {reg::X19},
-        "x20" | "s4" => quote! {reg::X20},
-        "x21" | "s5" => quote! {reg::X21},
-        "x22" | "s6" => quote! {reg::X22},
-        "x23" | "s7" => quote! {reg::X23},
-        "x24" | "s8" => quote! {reg::X24},
-        "x25" | "s9" => quote! {reg::X25},
-        "x26" | "s10" => quote! {reg::X26},
-        "x27" | "s11" => quote! {reg::X27},
-        "x28" | "t3" => quote! {reg::X28},
-        "x29" | "t4" => quote! {reg::X29},
-        "x30" | "t5" => quote! {reg::X30},
-        "x31" | "t6" => quote! {reg::X31},
-        _ => Error::new(Span::call_site(), format!("Unknown register: {reg}")).to_compile_error(),
     }
 }
 
@@ -618,7 +615,7 @@ fn emit_immediate_offset(
     consts: &HashMap<String, Expr>,
 ) -> Result<(TokenStream, TokenStream), Error> {
     match asm_parser::into_immediate_offset(imm_off) {
-        Ok((offset, reg)) => Ok((emit_integer_from_expr(offset, consts), emit_reg(reg))),
+        Ok((offset, reg)) => Ok((emit_integer_from_expr(offset, consts), Riscv::emit_reg(reg))),
         Err(err) => Err(Error::new(Span::call_site(), err.to_string())),
     }
 }
@@ -626,18 +623,6 @@ fn emit_immediate_offset(
 fn emit_symbol_addr(sym: &str, syms: &HashMap<String, Path>) -> TokenStream {
     if let Some(path) = syms.get(sym) {
         quote! {(&raw const #path) as *const _}
-    } else {
-        Error::new(
-            Span::call_site(),
-            format!("Could not find a symbol named '{sym}'"),
-        )
-        .to_compile_error()
-    }
-}
-
-fn emit_symbol_name(sym: &str, syms: &HashMap<String, Path>) -> TokenStream {
-    if let Some(path) = syms.get(sym) {
-        quote! { #path }
     } else {
         Error::new(
             Span::call_site(),
