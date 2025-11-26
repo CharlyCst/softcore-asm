@@ -249,11 +249,16 @@ fn generate_softcore_block<A: Arch>(
         let r = A::emit_reg(r);
         regs.push(quote! { core.get(#r) as _ });
     }
+    let returned_regs = if regs.is_empty() {
+        quote! { }
+    } else {
+        quote! { (#(#regs,)*) }
+    };
 
     quote! {
         #softcore(|core| {
             #instruction_code
-            (#(#regs,)*)
+            #returned_regs      
         });
     }
 }
