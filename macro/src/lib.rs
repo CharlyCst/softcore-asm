@@ -318,7 +318,7 @@ fn generate_structured_code<A: Arch>(shape: &Shape, ctx: &Context<A>) -> proc_ma
                 let _: extern #abi fn(#(#args_placeholders ,)*) #ret = #fun;
 
                 // Actually call the function
-                #fun(#(#args,)*);
+                #fun(#(FromRegister::from_register(#args),)*);
 
                 // We are done, continue
                 #next
@@ -398,7 +398,7 @@ pub fn asm(input: TokenStream) -> TokenStream {
                 registers as reg,
                 raw::{iop, rop, sop, csr_name_map_backwards, self},
             };
-            use ::softcore_asm_rv64::AsmCallable;
+            use ::softcore_asm_rv64::FromRegister;
             #softcore_code
         }
     }
