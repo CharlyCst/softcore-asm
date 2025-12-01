@@ -42,8 +42,18 @@ pub enum Attribute {
     Abi {
         name: String,
         num_args: u64,
-        noreturn: bool,
+        return_type: ReturnType,
     },
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum ReturnType {
+    Unit,
+    Never,
+    U64,
+    U32,
+    I64,
+    I32,
 }
 
 /// An expression, which can contain other expressions.
@@ -222,13 +232,13 @@ fn parse_attribute(pair: Pair<Rule>) -> Result<Attribute> {
 /// It takes two or three arguments:
 /// - A string literal specifying the ABI name (e.g., "C", "Rust", "Custom")
 /// - A number literal specifying the number of arguments
-/// - An optional "!" to indicate the function does not return
+/// - An optional return type ("!", "u64", "u32", "i64", "i32")
 ///
-/// Example: `#[abi("C", 4)]` or `#[abi("C", 4, "!")]`
+/// Example: `#[abi("C", 4)]` or `#[abi("C", 4, u64)]`
 ///
 /// This would be used in assembly like:
 /// ```text
-/// // #[abi("C", 4)]
+/// // #[abi("C", 4, u64)]
 /// call my_function
 /// ```
 fn parse_abi_attribute(mut args: pest::iterators::Pairs<Rule>) -> Result<Attribute> {
@@ -256,11 +266,22 @@ fn parse_abi_attribute(mut args: pest::iterators::Pairs<Rule>) -> Result<Attribu
         _ => return Err(anyhow!("Second argument of abi must be a number")),
     };
 
-    // Third argument (optional): "!" for never (noreturn)
-    let noreturn = match args.next() {
-        Some(arg) if arg.as_rule() == Rule::attribute_arg_never => true,
-        Some(_) => return Err(anyhow!("Third argument of abi must be \"!\"")),
-        None => false,
+    // Third argument (optional): return type
+    let return_type = match args.next() {
+        Some(arg) if arg.as_rule() == Rule::attribute_arg_ret => match arg.as_str() {
+            "!" => ReturnType::Never,
+            "u64" => ReturnType::U64,
+            "u32" => ReturnType::U32,
+            "i64" => ReturnType::I64,
+            "i32" => ReturnType::I32,
+            _ => return Err(anyhow!("Invalid return type: {}", arg.as_str())),
+        },
+        Some(_) => {
+            return Err(anyhow!(
+                "Third argument of abi must be a return type (!, u64, u32, i64, i32)"
+            ));
+        }
+        None => ReturnType::Unit, // Default to Unit if not specified
     };
 
     // Ensure no extra arguments
@@ -271,7 +292,7 @@ fn parse_abi_attribute(mut args: pest::iterators::Pairs<Rule>) -> Result<Attribu
     Ok(Attribute::Abi {
         name,
         num_args,
-        noreturn,
+        return_type,
     })
 }
 
@@ -489,7 +510,7 @@ mod tests {
                     Attribute::Abi {
                         name: "C".to_string(),
                         num_args: 4,
-                        noreturn: false,
+                        return_type: ReturnType::Unit,
                     }
                 );
             }
@@ -568,11 +589,11 @@ mod tests {
                     Attribute::Abi {
                         name,
                         num_args,
-                        noreturn,
+                        return_type,
                     } => {
                         assert_eq!(name, "C");
                         assert_eq!(*num_args, 4);
-                        assert!(!noreturn);
+                        assert_eq!(*return_type, ReturnType::Unit);
                     }
                 }
             }
@@ -587,11 +608,11 @@ mod tests {
                 Attribute::Abi {
                     name,
                     num_args,
-                    noreturn,
+                    return_type,
                 } => {
                     assert_eq!(name, "Rust");
                     assert_eq!(*num_args, 0);
-                    assert!(!noreturn);
+                    assert_eq!(*return_type, ReturnType::Unit);
                 }
             },
             _ => panic!("Expected instruction"),
@@ -608,17 +629,17 @@ mod tests {
                 Attribute::Abi {
                     name,
                     num_args,
-                    noreturn,
+                    return_type,
                 } => {
                     assert_eq!(name, "Custom");
                     assert_eq!(*num_args, 100);
-                    assert!(!noreturn);
+                    assert_eq!(*return_type, ReturnType::Unit);
                 }
             },
             _ => panic!("Expected instruction"),
         }
 
-        // Test noreturn attribute
+        // Test never return type attribute
         let code = vec![
             "// #[abi(\"C\", 1, !)]".to_string(),
             "call exit".to_string(),
@@ -629,11 +650,32 @@ mod tests {
                 Attribute::Abi {
                     name,
                     num_args,
-                    noreturn,
+                    return_type,
                 } => {
                     assert_eq!(name, "C");
                     assert_eq!(*num_args, 1);
-                    assert!(noreturn);
+                    assert_eq!(*return_type, ReturnType::Never);
+                }
+            },
+            _ => panic!("Expected instruction"),
+        }
+
+        // Test u64 return type
+        let code = vec![
+            "// #[abi(\"C\", 1, u64)]".to_string(),
+            "call get_value".to_string(),
+        ];
+        let result = parse_instructions(&code).unwrap();
+        match &result[0] {
+            AsmLine::Instr(instr) => match &instr.attributes[0] {
+                Attribute::Abi {
+                    name,
+                    num_args,
+                    return_type,
+                } => {
+                    assert_eq!(name, "C");
+                    assert_eq!(*num_args, 1);
+                    assert_eq!(*return_type, ReturnType::U64);
                 }
             },
             _ => panic!("Expected instruction"),

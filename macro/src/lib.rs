@@ -17,6 +17,7 @@ use arch::Arch;
 use asm_parser::{AsmLine, Instr, parse_instructions};
 use macro_parser::{AsmInput, AsmOperand, KindRegister, OperandKind, RegisterOperand};
 
+use crate::asm_parser::ReturnType;
 use crate::relooper::{Conditional, Shape, StructuredProgram};
 
 // ———————————————————————————— Compiler Driver ————————————————————————————— //
@@ -250,7 +251,7 @@ fn generate_softcore_block<A: Arch>(
         regs.push(quote! { core.get(#r) as _ });
     }
     let returned_regs = if regs.is_empty() {
-        quote! { }
+        quote! {}
     } else {
         quote! { (#(#regs,)*) }
     };
@@ -258,7 +259,7 @@ fn generate_softcore_block<A: Arch>(
     quote! {
         #softcore(|core| {
             #instruction_code
-            #returned_regs      
+            #returned_regs
         });
     }
 }
@@ -302,10 +303,25 @@ fn generate_structured_code<A: Arch>(shape: &Shape, ctx: &Context<A>) -> proc_ma
 
             // Create the function type
             let args_placeholders = vec![quote! { _ }; call.num_args as usize];
-            let ret = if call.noreturn {
-                quote! { -> ! }
-            } else {
+            let ret = match &call.return_type {
+                ReturnType::Unit => quote! {},
+                ReturnType::Never => quote! { -> ! },
+                ReturnType::U64 => quote! { -> u64 },
+                ReturnType::U32 => quote! { -> u32 },
+                ReturnType::I64 => quote! { -> i64 },
+                ReturnType::I32 => quote! { -> i32 },
+            };
+            // Create the function call
+            let fn_call_tokens = quote! {
+                #fun(#(FromRegister::from_register(#args),)*);
+            };
+            // Get the code to set the return values in the registers
+            let (fn_call, reg_update) =
+                A::update_register_from_fn_call(abi, call.return_type, fn_call_tokens);
+            let reg_update = if reg_update.is_empty() {
                 quote! {}
+            } else {
+                generate_softcore_block(reg_update, &[], ctx)
             };
 
             // Create a block to extract the arguments, and the next block to execute
@@ -323,7 +339,9 @@ fn generate_structured_code<A: Arch>(shape: &Shape, ctx: &Context<A>) -> proc_ma
                 let _: extern #abi fn(#(#args_placeholders ,)*) #ret = #fun;
 
                 // Actually call the function
-                #fun(#(FromRegister::from_register(#args),)*);
+                #fn_call
+                #[allow(unreachable_code)] // because the function can return `!` (never)
+                #reg_update
 
                 // We are done, continue
                 #next

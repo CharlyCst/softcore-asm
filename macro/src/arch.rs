@@ -1,5 +1,6 @@
 //! Abstraction over the assembly architecture
 
+use crate::ReturnType;
 use crate::asm_parser::Instr;
 use crate::relooper::LabelTerminator;
 use proc_macro2::TokenStream;
@@ -22,4 +23,14 @@ pub trait Arch {
     //
     //  TODO: return a result here to allow for proper error handling.
     fn abi_registers(abi: &str, nb_args: u64) -> &[&str];
+
+    /// Update the registers by inserting the return values of a Rust function into the core's
+    /// registers.
+    /// Returns a token stream for the function call, which create new variables as appropriate,
+    /// and a second token steam of registers to update in the next softwcore block.
+    fn update_register_from_fn_call(
+        abi: &str,
+        return_type: ReturnType,
+        call: TokenStream,
+    ) -> (TokenStream, TokenStream);
 }

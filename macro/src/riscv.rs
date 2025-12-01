@@ -1,5 +1,5 @@
 use crate::arch::Arch;
-use crate::asm_parser::{Attribute, Expr as NumExpr};
+use crate::asm_parser::{Attribute, Expr as NumExpr, ReturnType};
 use crate::relooper::{Conditional, FnCall, LabelTerminator};
 use crate::{Context, Instr, asm_parser};
 use proc_macro2::{Span, TokenStream};
@@ -175,13 +175,13 @@ impl Arch for Riscv {
 
                 // Look for an ABI annotation (required for now as Rust can't infer the number of
                 // arguments (the arity) of the function when doing a cast.
-                let Some((abi_name, num_args, noreturn)) =
+                let Some((abi_name, num_args, return_type)) =
                     instr.attributes.iter().find_map(|attr| match attr {
                         Attribute::Abi {
                             name,
                             num_args,
-                            noreturn,
-                        } => Some((name, num_args, noreturn)),
+                            return_type,
+                        } => Some((name, num_args, return_type)),
                     })
                 else {
                     return Err(Error::new(
@@ -193,7 +193,7 @@ impl Arch for Riscv {
                     fn_path: path.clone(),
                     abi: abi_name.clone(),
                     num_args: *num_args,
-                    noreturn: *noreturn,
+                    return_type: return_type.clone(),
                 })))
             }
             _ => Ok(None),
@@ -243,12 +243,31 @@ impl Arch for Riscv {
 
     fn abi_registers(abi: &str, nb_args: u64) -> &[&str] {
         static ARGS_ABI: [&str; 8] = ["a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7"];
-        
+
         assert_eq!(abi, "C", "Unsupported ABI: '{abi}'");
         assert!(nb_args <= 8, "Support at most 8 arguments");
 
         let nb_args = nb_args as usize;
         &ARGS_ABI[0..nb_args]
+    }
+
+    fn update_register_from_fn_call(
+        abi: &str,
+        return_type: ReturnType,
+        call: TokenStream,
+    ) -> (TokenStream, TokenStream) {
+        assert_eq!(abi, "C", "Unsupported ABI: '{abi}'");
+        match return_type {
+            // Nothing to do, just inline the call
+            ReturnType::Never | ReturnType::Unit => (call, quote! {}),
+            // We need to put the return value into a0
+            ReturnType::U64 | ReturnType::U32 | ReturnType::I64 | ReturnType::I32 => {
+                let ret_reg = Self::emit_reg("a0");
+                let call = quote! { let ret_val = #call; };
+                let update = quote! { core.set(#ret_reg, ret_val as u64); };
+                (call, update)
+            }
+        }
     }
 }
 

@@ -666,7 +666,6 @@ fn fn_call_from_assembly() {
         baz = sym baz,
     );
 
-
     // Test nesting calls into assembly macro.
     // In this case, the Rust function called will itself call assembly.
     extern "C" fn buzz() {
@@ -684,6 +683,22 @@ fn fn_call_from_assembly() {
         buzz = sym buzz,
     );
     assert_eq!(value, 42);
+
+    // Test function with u64 return type
+    extern "C" fn add_two(a: u64, b: u64) -> u64 {
+        a + b
+    }
+    let result: u64;
+    rasm!(
+        "// #[abi(\"C\", 2, u64)]",
+        "call {func}",
+        "mv {result}, a0",
+        result = out(reg) result,
+        func = sym add_two,
+        in("a0") 100,
+        in("a1") 42,
+    );
+    assert_eq!(result, 142);
 }
 
 #[test]

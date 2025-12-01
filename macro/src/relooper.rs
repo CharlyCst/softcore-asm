@@ -5,7 +5,7 @@
 //! control flow primitives such as `if`s and `loop`s.
 
 use crate::arch::Arch;
-use crate::asm_parser::{AsmLine, Instr};
+use crate::asm_parser::{AsmLine, Instr, ReturnType};
 use crate::{Context, ParsedAssembly};
 use anyhow::{Result, anyhow};
 use syn::Path;
@@ -32,8 +32,8 @@ pub struct FnCall {
     pub abi: String,
     /// The number of arguments for that function
     pub num_args: u64,
-    /// Wether the function returns, not not (i.e, returns the never type `-> !`)
-    pub noreturn: bool,
+    /// The return type of the function
+    pub return_type: ReturnType,
 }
 
 impl Debug for FnCall {
@@ -41,7 +41,7 @@ impl Debug for FnCall {
         f.debug_struct("FnCall")
             .field("abi", &self.abi)
             .field("num_args", &self.num_args)
-            .field("noreturn", &self.noreturn)
+            .field("return_type", &self.return_type)
             .finish()
     }
 }
@@ -509,9 +509,9 @@ fn detect_shape(
     ) -> Result<Option<Box<Shape>>> {
         // Simple linear flow
         let mut remaining = unprocessed.clone();
-        remaining.remove(next);
 
         if remaining.contains(next) {
+            remaining.remove(next);
             Ok(Some(Box::new(reloop(*next, &remaining, cfg)?)))
         } else {
             Ok(None)
