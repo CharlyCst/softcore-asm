@@ -568,6 +568,22 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
                 quote! { (*core).execute(ast::EBREAK(())) },
             ))
         }
+        "anchor.enter" => {
+            check_nb_op(instr, 2)?;
+            let rs1 = Riscv::emit_reg(&ops[0]);
+            let rs2 = Riscv::emit_reg(&ops[1]);
+            Ok(InstrToken::MayTrap(
+                quote! { (*core).execute(ast::ENTER_ANCHOR((#rs1, #rs2))) },
+            ))
+        }
+        "anchor.exit" => {
+            check_nb_op(instr, 2)?;
+            let rs1 = Riscv::emit_reg(&ops[0]);
+            let rs2 = Riscv::emit_reg(&ops[1]);
+            Ok(InstrToken::MayTrap(
+                quote! { (*core).execute(ast::EXIT_ANCHOR((#rs1, #rs2))) },
+            ))
+        }
         "wfi" => {
             check_nb_op(instr, 0)?;
             Ok(InstrToken::MayTrap(
