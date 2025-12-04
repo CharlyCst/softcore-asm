@@ -631,6 +631,18 @@ fn fn_call_from_assembly() {
     );
     assert!(BAR.load(Ordering::SeqCst));
 
+    // With another ABI
+    BAR.store(false, Ordering::SeqCst);
+    extern "C-unwind" fn foo2() {
+        BAR.store(true, Ordering::SeqCst);
+    }
+    rasm!(
+        "// #[abi(\"C-unwind\", 0)]",
+        "call {foo}",
+        foo = sym foo2,
+    );
+    assert!(BAR.load(Ordering::SeqCst));
+
     // Now with a few arguments passed through registers
     extern "C" fn bar(a: u64, b: usize, c: u32) {
         assert_eq!(a, 42);

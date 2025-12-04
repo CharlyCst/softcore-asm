@@ -27,7 +27,7 @@ atom        = _{ unary_minus? ~ primary }
 expr        =  { atom ~ ( binop ~ atom )* }
 
 // Attributes
-attribute_arg_str = @{ "\"" ~ (ASCII_ALPHANUMERIC | "_")* ~ "\"" }
+attribute_arg_str = @{ "\"" ~ (ASCII_ALPHANUMERIC | "_" | "-")* ~ "\"" }
 attribute_arg_num = @{ ASCII_DIGIT+ }
 attribute_arg_ret = { "!" | "u64" | "u32" | "i64" | "u32" }
 attribute_arg     = _{ attribute_arg_str | attribute_arg_num | attribute_arg_ret }

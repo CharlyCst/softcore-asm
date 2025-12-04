@@ -244,7 +244,7 @@ impl Arch for Riscv {
     fn abi_registers(abi: &str, nb_args: u64) -> &[&str] {
         static ARGS_ABI: [&str; 8] = ["a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7"];
 
-        assert_eq!(abi, "C", "Unsupported ABI: '{abi}'");
+        assert!(abi == "C" || abi == "C-unwind", "Unsupported ABI: '{abi}'");
         assert!(nb_args <= 8, "Support at most 8 arguments");
 
         let nb_args = nb_args as usize;
@@ -256,7 +256,7 @@ impl Arch for Riscv {
         return_type: ReturnType,
         call: TokenStream,
     ) -> (TokenStream, TokenStream) {
-        assert_eq!(abi, "C", "Unsupported ABI: '{abi}'");
+        assert!(abi == "C" || abi == "C-unwind", "Unsupported ABI: '{abi}'");
         match return_type {
             // Nothing to do, just inline the call
             ReturnType::Never | ReturnType::Unit => (call, quote! {}),
