@@ -36,3 +36,15 @@ impl FromRegister for usize {
         value as usize
     }
 }
+
+impl<A> FromRegister for *const A {
+    fn from_register(value: u64) -> Self {
+        value as usize as *const _
+    }
+}
+
+impl<A> FromRegister for *mut A {
+    fn from_register(value: u64) -> Self {
+        value as usize as *mut _
+    }
+}
