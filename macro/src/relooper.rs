@@ -544,29 +544,26 @@ fn detect_shape(
 
     let block = &cfg[entry.0];
 
-    match &block.terminator {
+    let next = match &block.terminator {
         Terminator::Done => {
             // Terminal block - no continuation
-            Ok(Shape::Block {
-                instrs: block.instrs.clone(),
-                next: None,
-            })
+            None
         }
 
         Terminator::FnCall { next, call } => {
             let next = find_next(unprocessed, next, cfg)?;
-            Ok(Shape::FnCall {
+            Some(Box::new(Shape::FnCall {
                 next,
                 call: call.clone(),
-            })
+            }))
         }
 
         Terminator::Jump(target) => {
             let next = find_next(unprocessed, target, cfg)?;
-            Ok(Shape::Block {
+            Some(Box::new(Shape::Block {
                 instrs: block.instrs.clone(),
                 next,
-            })
+            }))
         }
 
         Terminator::Branch {
@@ -611,17 +608,18 @@ fn detect_shape(
                 None
             };
 
-            Ok(Shape::Block {
-                instrs: block.instrs.clone(),
-                next: Some(Box::new(Shape::If {
-                    cond: cond.clone(),
-                    then_branch,
-                    else_branch,
-                    next,
-                })),
-            })
+            Some(Box::new(Shape::If {
+                cond: cond.clone(),
+                then_branch,
+                else_branch,
+                next,
+            }))
         }
-    }
+    };
+    Ok(Shape::Block {
+        instrs: block.instrs.clone(),
+        next,
+    })
 }
 
 /// Main relooper algorithm - recursively converts CFG to structured control flow.

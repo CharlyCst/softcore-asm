@@ -661,6 +661,17 @@ fn fn_call_from_assembly() {
     );
     assert!(BAR.load(Ordering::SeqCst));
 
+    // And arguments defined in assembly
+    extern "C" fn bar2(a: u64) {
+        assert_eq!(a, 14);
+    }
+    rasm!(
+        "addi a0, x0, 14",
+        "// #[abi(\"C\", 1)]",
+        "call {bar}",
+        bar = sym bar2,
+    );
+
     // Test diverging function (-> !). The actual call is skipped at runtime via a branch,
     // but the type system ensures the code compiles correctly with `extern "C" fn() -> !`.
     // Note: We can't use `#[should_panic]` because `extern "C"` functions don't support
