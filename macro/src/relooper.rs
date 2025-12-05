@@ -165,6 +165,14 @@ pub struct RawBasicBlocks<A> {
     pub ctx: Context<A>,
 }
 
+impl<A> Debug for RawBasicBlocks<A> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RawBasicBlocks")
+            .field("blocks", &self.blocks)
+            .finish()
+    }
+}
+
 /// Control flow graph with fully resolved basic block references.
 ///
 /// All control flow targets have been resolved from string labels to basic block IDs,
@@ -174,6 +182,14 @@ pub struct ControlFlowGraph<A> {
     pub blocks: Vec<BasicBlock>,
     /// Architecture-specific context
     pub ctx: Context<A>,
+}
+
+impl<A> Debug for ControlFlowGraph<A> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ControlFlowGraph")
+            .field("blocks", &self.blocks)
+            .finish()
+    }
 }
 
 /// Structured control flow representation (output of relooper algorithm).
@@ -202,8 +218,8 @@ pub enum Shape {
     },
     /// Call to a Rust function
     FnCall {
-        next: Option<Box<Shape>>,
         call: FnCall,
+        next: Option<Box<Shape>>,
     },
 }
 
@@ -216,6 +232,14 @@ pub struct StructuredProgram<A> {
     pub shape: Shape,
     /// Architecture-specific context
     pub ctx: Context<A>,
+}
+
+impl<A> Debug for StructuredProgram<A> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StructuredProgram")
+            .field("shape", &self.shape)
+            .finish()
+    }
 }
 
 // ——————————————————————————— Relooper Algorithm ——————————————————————————— //

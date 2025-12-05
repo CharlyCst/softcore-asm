@@ -4,6 +4,7 @@ use proc_macro2::Span;
 use quote::quote;
 use regex::Regex;
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::sync::LazyLock;
 use syn::{Expr, Path, parse_macro_input};
 
@@ -57,6 +58,14 @@ struct RegAllocation {
 struct ParsedAssembly<A> {
     asm_lines: Vec<AsmLine>,
     ctx: Context<A>,
+}
+
+impl<A> Debug for ParsedAssembly<A> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ParsedAssembly")
+            .field("asm_lines", &self.asm_lines)
+            .finish()
+    }
 }
 
 fn build_operand_register_map<A>(
