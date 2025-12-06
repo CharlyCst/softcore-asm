@@ -518,7 +518,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
             check_nb_op(instr, 1)?;
             let rs1 = Riscv::emit_reg(&ops[0]);
             let rd = Riscv::emit_reg("x0");
-            Ok(quote! { core.execute(ast::JALR((bv(0), #rs1, #rd)))})
+            Ok(quote! { core.execute(ast::JALR((bv(0), #rs1, #rd))); })
         }
 
         // System
@@ -556,7 +556,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
                 check_nb_op(instr, 2)?;
                 (Riscv::emit_reg(&ops[0]), Riscv::emit_reg(&ops[1]))
             };
-            Ok(quote! { core.execute(ast::SFENCE_VMA((#vaddr, #asid))) })
+            Ok(quote! { core.execute(ast::SFENCE_VMA((#vaddr, #asid))); })
         }
         "hfence.gvma" => {
             // Not currently supported in the Sail model, emit a no-op.
