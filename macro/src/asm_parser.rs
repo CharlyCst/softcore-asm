@@ -11,7 +11,7 @@
 
 use anyhow::{Result, anyhow};
 use pest::Parser;
-use pest::iterators::Pair;
+use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::PrattParser;
 use pest_derive::Parser;
 use std::sync::LazyLock;
@@ -43,6 +43,9 @@ pub enum Attribute {
         name: String,
         num_args: u64,
         return_type: ReturnType,
+    },
+    ReplaceWith {
+        instr: Instr,
     },
 }
 
@@ -139,6 +142,13 @@ pub fn parse_instructions(assembly_template: &[String]) -> Result<Vec<AsmLine>> 
                 pending_attributes.push(attr);
             }
             ParsedLine::AsmLine(AsmLine::Instr(mut instr)) => {
+                // Check for the "replace_with" attribute
+                for attr in &pending_attributes {
+                    if let Attribute::ReplaceWith { instr: new_instr } = attr {
+                        instr = new_instr.clone();
+                    }
+                }
+
                 // Attach accumulated attributes to this instruction
                 instr.attributes = pending_attributes;
                 pending_attributes = Vec::new();
@@ -219,6 +229,7 @@ fn parse_attribute(pair: Pair<Rule>) -> Result<Attribute> {
 
             match attr_name {
                 "abi" => parse_abi_attribute(inner),
+                "replace_with" => parse_replace_with_attribute(inner),
                 _ => Err(anyhow!("Unknown attribute: {}", attr_name)),
             }
         }
@@ -241,7 +252,7 @@ fn parse_attribute(pair: Pair<Rule>) -> Result<Attribute> {
 /// // #[abi("C", 4, u64)]
 /// call my_function
 /// ```
-fn parse_abi_attribute(mut args: pest::iterators::Pairs<Rule>) -> Result<Attribute> {
+fn parse_abi_attribute(mut args: Pairs<Rule>) -> Result<Attribute> {
     // First argument: string (ABI name)
     let name_arg = args
         .next()
@@ -296,6 +307,32 @@ fn parse_abi_attribute(mut args: pest::iterators::Pairs<Rule>) -> Result<Attribu
     })
 }
 
+fn parse_replace_with_attribute(mut args: Pairs<Rule>) -> Result<Attribute> {
+    let instr_arg = args
+        .next()
+        .ok_or_else(|| anyhow!("replace_with attribute requires one instruction as argument: replace_with(\"addi x10, x11, 42\")"))?;
+
+    // Throw an error for extra arguments
+    if args.next().is_some() {
+        return Err(anyhow!(
+            "replace_with attribute expects exactly one argument"
+        ));
+    }
+
+    // Strip quotes from the string
+    let instr_str = match instr_arg.as_rule() {
+        Rule::attribute_arg_str => {
+            let s = instr_arg.as_str();
+            s.trim_matches('"')
+        }
+        _ => return Err(anyhow!("replace_with attribute argument must be a string")),
+    };
+
+    let instr = parse_asm_instr_from_str(instr_str)?;
+
+    Ok(Attribute::ReplaceWith { instr })
+}
+
 fn parse_asm_instr(pair: Pair<Rule>, attributes: Vec<Attribute>) -> Result<Instr> {
     let mut operands = Vec::new();
     let mut pairs = match pair.as_rule() {
@@ -316,6 +353,14 @@ fn parse_asm_instr(pair: Pair<Rule>, attributes: Vec<Attribute>) -> Result<Instr
         operands,
         attributes,
     })
+}
+
+/// Parse a single instruction from a string.
+fn parse_asm_instr_from_str(instr: &str) -> Result<Instr> {
+    let pair = PestParser::parse(Rule::asm_instr, instr.trim())?
+        .next()
+        .unwrap();
+    parse_asm_instr(pair, Vec::new())
 }
 
 /// Parses an immediate offset, such as `2*8(x1)`
@@ -444,6 +489,41 @@ mod tests {
         assert_eq!(parse("(2 + 6) * 8"), Expr::Number(64));
         assert_eq!(parse("-3"), Expr::Number(-3));
         assert_eq!(parse("0x42"), Expr::Number(0x42));
+    }
+
+    #[test]
+    fn assembly_instr() {
+        // Test an instruction without operands
+        let wfi = parse_asm_instr_from_str("wfi").unwrap();
+        assert_eq!(wfi.mnemonic, "wfi");
+        assert_eq!(wfi.operands, Vec::<String>::new());
+        assert_eq!(wfi.attributes, Vec::<Attribute>::new());
+
+        // Test the same instruction with whitespace
+        let wfi = parse_asm_instr_from_str("  wfi  ").unwrap();
+        assert_eq!(wfi.mnemonic, "wfi");
+        assert_eq!(wfi.operands, Vec::<String>::new());
+
+        // Test an instruction with operands
+        let csrw = parse_asm_instr_from_str("csrw mscratch, x1").unwrap();
+        assert_eq!(csrw.mnemonic, "csrw");
+        assert_eq!(csrw.operands, vec!["mscratch", "x1"]);
+        assert_eq!(csrw.attributes, Vec::<Attribute>::new());
+
+        // Test with extra whitespace
+        let csrw = parse_asm_instr_from_str("   csrw  mscratch  , x1  ").unwrap();
+        assert_eq!(csrw.mnemonic, "csrw");
+        assert_eq!(csrw.operands, vec!["mscratch", "x1"]);
+
+        // Test an instruction with comments
+        let csrw = parse_asm_instr_from_str("csrw mscratch, x1 // test comment").unwrap();
+        assert_eq!(csrw.mnemonic, "csrw");
+        assert_eq!(csrw.operands, vec!["mscratch", "x1"]);
+
+        // Test an instruction with multiple operands
+        let add = parse_asm_instr_from_str("add x1, x2, x3").unwrap();
+        assert_eq!(add.mnemonic, "add");
+        assert_eq!(add.operands, vec!["x1", "x2", "x3"]);
     }
 
     #[test]
@@ -595,6 +675,7 @@ mod tests {
                         assert_eq!(*num_args, 4);
                         assert_eq!(*return_type, ReturnType::Unit);
                     }
+                    _ => panic!("Expected Abi attribute"),
                 }
             }
             _ => panic!("Expected instruction"),
@@ -614,6 +695,7 @@ mod tests {
                     assert_eq!(*num_args, 0);
                     assert_eq!(*return_type, ReturnType::Unit);
                 }
+                _ => panic!("Expected Abi attribute"),
             },
             _ => panic!("Expected instruction"),
         }
@@ -635,6 +717,7 @@ mod tests {
                     assert_eq!(*num_args, 100);
                     assert_eq!(*return_type, ReturnType::Unit);
                 }
+                _ => panic!("Expected Abi attribute"),
             },
             _ => panic!("Expected instruction"),
         }
@@ -656,6 +739,7 @@ mod tests {
                     assert_eq!(*num_args, 1);
                     assert_eq!(*return_type, ReturnType::Never);
                 }
+                _ => panic!("Expected Abi attribute"),
             },
             _ => panic!("Expected instruction"),
         }
@@ -677,6 +761,7 @@ mod tests {
                     assert_eq!(*num_args, 1);
                     assert_eq!(*return_type, ReturnType::U64);
                 }
+                _ => panic!("Expected Abi attribute"),
             },
             _ => panic!("Expected instruction"),
         }
@@ -717,5 +802,46 @@ mod tests {
         // Test unknown attribute
         let code = vec!["// #[unknown]".to_string(), "call foo".to_string()];
         assert!(parse_instructions(&code).is_err());
+    }
+
+    #[test]
+    fn replace_with_attribute() {
+        // Test basic replace_with attribute
+        let code = vec![
+            "// #[replace_with(\"addi x10, x10, 42\")]".to_string(),
+            "wfi".to_string(),
+        ];
+        let result = parse_instructions(&code).unwrap();
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            AsmLine::Instr(instr) => {
+                // The instruction should be replaced with addi
+                assert_eq!(instr.mnemonic, "addi");
+                assert_eq!(instr.operands, vec!["x10", "x10", "42"]);
+            }
+            _ => panic!("Expected instruction"),
+        }
+
+        // Test that replace_with only affects the next instruction
+        let code = vec![
+            "// #[replace_with(\"nop\")]".to_string(),
+            "wfi".to_string(),
+            "wfi".to_string(),
+        ];
+        let result = parse_instructions(&code).unwrap();
+        assert_eq!(result.len(), 2);
+        match &result[0] {
+            AsmLine::Instr(instr) => {
+                assert_eq!(instr.mnemonic, "nop");
+            }
+            _ => panic!("Expected instruction"),
+        }
+        match &result[1] {
+            AsmLine::Instr(instr) => {
+                assert_eq!(instr.mnemonic, "wfi");
+                assert_eq!(instr.attributes.len(), 0);
+            }
+            _ => panic!("Expected instruction"),
+        }
     }
 }

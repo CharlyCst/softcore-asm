@@ -182,6 +182,7 @@ impl Arch for Riscv {
                             num_args,
                             return_type,
                         } => Some((name, num_args, return_type)),
+                        _ => None,
                     })
                 else {
                     return Err(Error::new(
