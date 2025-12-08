@@ -13,8 +13,11 @@ readme = "README.md"
 [lib]
 
 [dependencies]
-softcore-rv64 = "0.5.0"
+softcore-rv64 = { workspace = true }
 softcore-asm-macro = { path = "macro/", version = "0.1.0" }
 
 [workspace]
 members = [ "macro" ]
+
+[workspace.dependencies]
+softcore-rv64 = "0.5.0"

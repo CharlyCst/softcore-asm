@@ -195,6 +195,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "regex",
+ "softcore-rv64",
  "syn",
 ]
 
