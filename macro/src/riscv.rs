@@ -18,7 +18,7 @@ macro_rules! rtype {
         let rs1 = Riscv::emit_reg(&$instr.operands[1]);
         let rs2 = Riscv::emit_reg(&$instr.operands[2]);
         Ok(quote! {
-            core.execute(ast::RTYPE((#rs2, #rs1, #rd, rop::$op)));
+            core.execute(ast::RTYPE((#rs2, #rs1, #rd, rop::$op))).unwrap();
         })
     }};
 }
@@ -31,7 +31,7 @@ macro_rules! itype {
         let rs1 = Riscv::emit_reg(&$instr.operands[1]);
         let imm = emit_integer(&$instr.operands[2], $consts);
         Ok(quote! {
-            core.execute(ast::ITYPE((bv(#imm), #rs1, #rd, iop::$op)));
+            core.execute(ast::ITYPE((bv(#imm), #rs1, #rd, iop::$op))).unwrap();
         })
     }};
 }
@@ -44,7 +44,7 @@ macro_rules! shiftiop {
         let rs1 = Riscv::emit_reg(&$instr.operands[1]);
         let imm = emit_integer(&$instr.operands[2], $consts);
         Ok(quote! {
-            core.execute(ast::SHIFTIOP((bv(#imm), #rs1, #rd, sop::$op)));
+            core.execute(ast::SHIFTIOP((bv(#imm), #rs1, #rd, sop::$op))).unwrap();
         })
     }};
 }
@@ -57,7 +57,7 @@ macro_rules! mul {
         let rs1 = Riscv::emit_reg(&$instr.operands[1]);
         let rs2 = Riscv::emit_reg(&$instr.operands[2]);
         Ok(quote! {
-            core.execute(ast::MUL((#rs2, #rs1, #rd, raw::encdec_mul_op_backwards(bv::<3>($op_bits)))));
+            core.execute(ast::MUL((#rs2, #rs1, #rd, raw::encdec_mul_op_backwards(bv::<3>($op_bits))))).unwrap();
         })
     }};
 }
@@ -520,45 +520,45 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
             check_nb_op(instr, 1)?;
             let rs1 = Riscv::emit_reg(&ops[0]);
             let rd = Riscv::emit_reg("x0");
-            Ok(quote! { core.execute(ast::JALR((bv(0), #rs1, #rd))); })
+            Ok(quote! { core.execute(ast::JALR((bv(0), #rs1, #rd))).unwrap(); })
         }
 
         // System
         "mret" => {
             check_nb_op(instr, 0)?;
-            Ok(quote! { core.execute(ast::MRET(())); })
+            Ok(quote! { core.execute(ast::MRET(())).unwrap(); })
         }
         "sret" => {
             check_nb_op(instr, 0)?;
-            Ok(quote! { core.execute(ast::SRET(())); })
+            Ok(quote! { core.execute(ast::SRET(())).unwrap(); })
         }
         "ecall" => {
             check_nb_op(instr, 0)?;
-            Ok(quote! { core.execute(ast::ECALL(())); })
+            Ok(quote! { core.execute(ast::ECALL(())).unwrap(); })
         }
         "ebreak" => {
             check_nb_op(instr, 0)?;
-            Ok(quote! { core.execute(ast::EBREAK(())); })
+            Ok(quote! { core.execute(ast::EBREAK(())).unwrap(); })
         }
         "anchor.enter" => {
             check_nb_op(instr, 2)?;
             let rs1 = Riscv::emit_reg(&ops[0]);
             let rs2 = Riscv::emit_reg(&ops[1]);
-            Ok(quote! { core.execute(ast::ENTER_ANCHOR((#rs1, #rs2))); })
+            Ok(quote! { core.execute(ast::ENTER_ANCHOR((#rs1, #rs2))).unwrap(); })
         }
         "anchor.exit" => {
             check_nb_op(instr, 2)?;
             let rs1 = Riscv::emit_reg(&ops[0]);
             let rs2 = Riscv::emit_reg(&ops[1]);
-            Ok(quote! { core.execute(ast::EXIT_ANCHOR((#rs1, #rs2))); })
+            Ok(quote! { core.execute(ast::EXIT_ANCHOR((#rs1, #rs2))).unwrap(); })
         }
         "wfi" => {
             check_nb_op(instr, 0)?;
-            Ok(quote! { core.execute(ast::WFI(())); })
+            Ok(quote! { core.execute(ast::WFI(())).unwrap(); })
         }
         "fence.i" => {
             check_nb_op(instr, 0)?;
-            Ok(quote! { core.execute(ast::FENCEI(())); })
+            Ok(quote! { core.execute(ast::FENCEI(())).unwrap(); })
         }
         "sfence.vma" => {
             // The assembly can allow omitting some arguments
@@ -570,7 +570,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
                 check_nb_op(instr, 2)?;
                 (Riscv::emit_reg(&ops[0]), Riscv::emit_reg(&ops[1]))
             };
-            Ok(quote! { core.execute(ast::SFENCE_VMA((#vaddr, #asid))); })
+            Ok(quote! { core.execute(ast::SFENCE_VMA((#vaddr, #asid))).unwrap(); })
         }
         "hfence.gvma" => {
             // Not currently supported in the Sail model, emit a no-op.
