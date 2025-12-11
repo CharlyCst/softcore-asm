@@ -18,7 +18,7 @@ macro_rules! rtype {
         let rs1 = Riscv::emit_reg(&$instr.operands[1]);
         let rs2 = Riscv::emit_reg(&$instr.operands[2]);
         Ok(quote! {
-            core.execute(ast::RTYPE((#rs2, #rs1, #rd, rop::$op))).unwrap();
+            core.execute(ast::RTYPE((#rs2, #rs1, #rd, rop::$op))).assert_no_trap();
         })
     }};
 }
@@ -31,7 +31,7 @@ macro_rules! itype {
         let rs1 = Riscv::emit_reg(&$instr.operands[1]);
         let imm = emit_integer(&$instr.operands[2], $consts);
         Ok(quote! {
-            core.execute(ast::ITYPE((bv(#imm), #rs1, #rd, iop::$op))).unwrap();
+            core.execute(ast::ITYPE((bv(#imm), #rs1, #rd, iop::$op))).assert_no_trap();
         })
     }};
 }
@@ -44,7 +44,7 @@ macro_rules! shiftiop {
         let rs1 = Riscv::emit_reg(&$instr.operands[1]);
         let imm = emit_integer(&$instr.operands[2], $consts);
         Ok(quote! {
-            core.execute(ast::SHIFTIOP((bv(#imm), #rs1, #rd, sop::$op))).unwrap();
+            core.execute(ast::SHIFTIOP((bv(#imm), #rs1, #rd, sop::$op))).assert_no_trap();
         })
     }};
 }
@@ -57,7 +57,7 @@ macro_rules! mul {
         let rs1 = Riscv::emit_reg(&$instr.operands[1]);
         let rs2 = Riscv::emit_reg(&$instr.operands[2]);
         Ok(quote! {
-            core.execute(ast::MUL((#rs2, #rs1, #rd, raw::encdec_mul_op_backwards(bv::<3>($op_bits))))).unwrap();
+            core.execute(ast::MUL((#rs2, #rs1, #rd, raw::encdec_mul_op_backwards(bv::<3>($op_bits))))).assert_no_trap();
         })
     }};
 }
@@ -520,45 +520,45 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
             check_nb_op(instr, 1)?;
             let rs1 = Riscv::emit_reg(&ops[0]);
             let rd = Riscv::emit_reg("x0");
-            Ok(quote! { core.execute(ast::JALR((bv(0), #rs1, #rd))).unwrap(); })
+            Ok(quote! { core.execute(ast::JALR((bv(0), #rs1, #rd))).assert_no_trap(); })
         }
 
         // System
         "mret" => {
             check_nb_op(instr, 0)?;
-            Ok(quote! { core.execute(ast::MRET(())).unwrap(); })
+            Ok(quote! { core.execute(ast::MRET(())).assert_no_trap(); })
         }
         "sret" => {
             check_nb_op(instr, 0)?;
-            Ok(quote! { core.execute(ast::SRET(())).unwrap(); })
+            Ok(quote! { core.execute(ast::SRET(())).assert_no_trap(); })
         }
         "ecall" => {
             check_nb_op(instr, 0)?;
-            Ok(quote! { core.execute(ast::ECALL(())).unwrap(); })
+            Ok(quote! { core.execute(ast::ECALL(())).assert_no_trap(); })
         }
         "ebreak" => {
             check_nb_op(instr, 0)?;
-            Ok(quote! { core.execute(ast::EBREAK(())).unwrap(); })
+            Ok(quote! { core.execute(ast::EBREAK(())).assert_no_trap(); })
         }
         "anchor.enter" => {
             check_nb_op(instr, 2)?;
             let rs1 = Riscv::emit_reg(&ops[0]);
             let rs2 = Riscv::emit_reg(&ops[1]);
-            Ok(quote! { core.execute(ast::ENTER_ANCHOR((#rs1, #rs2))).unwrap(); })
+            Ok(quote! { core.execute(ast::ENTER_ANCHOR((#rs1, #rs2))).assert_no_trap(); })
         }
         "anchor.exit" => {
             check_nb_op(instr, 2)?;
             let rs1 = Riscv::emit_reg(&ops[0]);
             let rs2 = Riscv::emit_reg(&ops[1]);
-            Ok(quote! { core.execute(ast::EXIT_ANCHOR((#rs1, #rs2))).unwrap(); })
+            Ok(quote! { core.execute(ast::EXIT_ANCHOR((#rs1, #rs2))).assert_no_trap(); })
         }
         "wfi" => {
             check_nb_op(instr, 0)?;
-            Ok(quote! { core.execute(ast::WFI(())).unwrap(); })
+            Ok(quote! { core.execute(ast::WFI(())).assert_no_trap(); })
         }
         "fence.i" => {
             check_nb_op(instr, 0)?;
-            Ok(quote! { core.execute(ast::FENCEI(())).unwrap(); })
+            Ok(quote! { core.execute(ast::FENCEI(())).assert_no_trap(); })
         }
         "sfence.vma" => {
             // The assembly can allow omitting some arguments
@@ -570,7 +570,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
                 check_nb_op(instr, 2)?;
                 (Riscv::emit_reg(&ops[0]), Riscv::emit_reg(&ops[1]))
             };
-            Ok(quote! { core.execute(ast::SFENCE_VMA((#vaddr, #asid))).unwrap(); })
+            Ok(quote! { core.execute(ast::SFENCE_VMA((#vaddr, #asid))).assert_no_trap(); })
         }
         "hfence.gvma" => {
             // Not currently supported in the Sail model, emit a no-op.

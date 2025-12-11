@@ -20,4 +20,4 @@ softcore-asm-macro = { path = "macro/", version = "0.1.0" }
 members = [ "macro" ]
 
 [workspace.dependencies]
-softcore-rv64 = "0.5.0"
+softcore-rv64 = { git = "https://github.com/CharlyCst/softcore-rs.git", rev = "addda281"  }
