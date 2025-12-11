@@ -298,6 +298,11 @@ fn generate_structured_code<A: Arch>(shape: &Shape, ctx: &Context<A>) -> proc_ma
                     Ok(InstrToken::Infallible(tokens)) => tokens,
                     Err(err) => err.to_compile_error(),
                 };
+                let tokens = quote!{
+                    #tokens;
+                    let cur_priv = (*core).cur_privilege;
+                    assert_eq!(raw::dispatchInterrupt(&mut (*core), cur_priv), None);
+                };
                 code.extend(tokens);
             }
             let next = if let Some(next_shape) = next {
