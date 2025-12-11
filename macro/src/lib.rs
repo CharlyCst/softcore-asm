@@ -279,7 +279,10 @@ fn generate_structured_code<A: Arch>(shape: &Shape, ctx: &Context<A>) -> proc_ma
             let mut code = proc_macro2::TokenStream::new();
             for instr in instrs {
                 let tokens = match riscv::emit_softcore_instr(instr, ctx) {
-                    Ok(tokens) => tokens,
+                    Ok(tokens) => quote! {
+                        #tokens;
+                        assert_eq!(raw::dispatchInterrupt(core, core.cur_privilege), None);
+                    },
                     Err(err) => err.to_compile_error(),
                 };
                 code.extend(tokens);
