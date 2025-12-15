@@ -4,7 +4,6 @@ use crate::relooper::{Conditional, FnCall, LabelTerminator};
 use crate::{Context, Instr, asm_parser};
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use softcore_rv64::raw::csr_name_map_backwards;
 use std::collections::HashMap;
 use syn::{Error, Expr, Path};
 
@@ -597,17 +596,7 @@ fn check_nb_op(instr: &Instr, n: usize) -> Result<(), Error> {
 
 /// Creates tokens corresponding to the provided CSR register name.
 fn emit_csr(csr: &str) -> TokenStream {
-    // TODO: Softcore requires a 'static lifetime, because the Sail-to-Rust compiler emits all
-    // strings as &'static str for now. This forces us to leak the string here to give it a static
-    // lifetime, which is of course ugly. It is somewhat fine for a proc-macro, which is supposed
-    // to be short-lived, but we definitely want to fix this!
-    //
-    // The fix would require improving the Sail-to-Rust compiler to relax its lifetime requirements
-    // whenever possible.
-    let static_csr = csr.to_string().leak();
-
-    let csr_id = csr_name_map_backwards(static_csr).bits();
-    quote! { #csr_id }
+    quote! { csr_name_map_backwards(#csr).bits() }
 }
 
 /// Returns the parsed integer as a TokenStream.
