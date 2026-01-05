@@ -341,7 +341,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
             // Load address is a pseudo-instruction, it relies on relocations to find the address
             // of a symbol.
             // We can't use the same trick here, because we don't want to rely on the linker for
-            // that. Instrad, we use Rust to find the address of the symbol directly.
+            // that. Instead, we use Rust to find the address of the symbol directly.
             check_nb_op(instr, 2)?;
             let rd = Riscv::emit_reg(&ops[0]);
             let sym_addr = emit_symbol_addr(&ops[1], syms);
