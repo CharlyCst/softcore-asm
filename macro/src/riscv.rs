@@ -4,6 +4,7 @@ use crate::relooper::{Conditional, FnCall, LabelTerminator};
 use crate::{Context, Instr, asm_parser};
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
+use softcore_rv64::raw::{csr_name_map_backwards, csr_name_map_backwards_matches};
 use std::collections::HashMap;
 use syn::{Error, Expr, Path};
 
@@ -596,7 +597,41 @@ fn check_nb_op(instr: &Instr, n: usize) -> Result<(), Error> {
 
 /// Creates tokens corresponding to the provided CSR register name.
 fn emit_csr(csr: &str) -> TokenStream {
-    quote! { csr_name_map_backwards(#csr).bits() }
+    // TODO: Softcore requires a 'static lifetime, because the Sail-to-Rust compiler emits all
+    // strings as &'static str for now. This forces us to leak the string here to give it a static
+    // lifetime, which is of course ugly. It is somewhat fine for a proc-macro, which is supposed
+    // to be short-lived, but we definitely want to fix this!
+    // To limit the amount of leaked memory due to frequent CSR names, we use a cache that keeps
+    // strings with 'static lifetime.
+    //
+    // The fix would require improving the Sail-to-Rust compiler to relax its lifetime requirements
+    // whenever possible.
+    use std::sync::{LazyLock, Mutex};
+    static CACHE: LazyLock<Mutex<HashMap<String, &'static str>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+
+    let mut cache = CACHE.lock().unwrap();
+    let static_csr = match cache.get(csr) {
+        Some(csr) => *csr,
+        None => {
+            let static_csr = csr.to_string().leak();
+            let static_csr_key = csr.to_string();
+            cache.insert(static_csr_key, static_csr);
+            cache.get(csr).unwrap()
+        }
+    };
+    drop(cache);
+
+    let csr_id = if csr_name_map_backwards_matches(static_csr) {
+        csr_name_map_backwards(static_csr).bits()
+    } else {
+        // For unknown CSR we return an arbitrary, non-existant CSR.
+        // We picked an arbitrary value in the middle of custom U-mode read/write range
+        // (0x800-0x8FF)
+        0x8C4
+    };
+
+    quote! { #csr_id }
 }
 
 /// Returns the parsed integer as a TokenStream.

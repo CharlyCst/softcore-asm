@@ -20,4 +20,4 @@ softcore-asm-macro = { path = "macro/", version = "0.1.0" }
 members = [ "macro" ]
 
 [workspace.dependencies]
-softcore-rv64 = "0.5.0"
+softcore-rv64 = { path = "../sail/virt-sail/rv64/" }
