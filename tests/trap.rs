@@ -34,7 +34,7 @@ macro_rules! rasm {
         softcore_asm_rv64::asm!(
             $($asm)*,
             softcore(SOFT_CORE.with_borrow_mut),
-            softcore_trap_handlers(_tracing_trap_handler as usize),
+            softcore_trap_handlers(_tracing_trap_handler),
         )
     };
 }
@@ -53,16 +53,22 @@ macro_rules! naked_rasm {
 
 #[test]
 fn trapping_csr() {
-    // let mscratch: u64;
-    // rasm!(
-    //     "csrw mscratch, x0",    // Initialize mscratch to 0
-    //     "csrw invalid_csr, x1", // Attempt to write to an invalid CSR
-    //     "csrr {val}, mscratch", // After the trap, mscratch should be 1 (see _tracing_trap_handler)
-    //     val = out(reg) mscratch,
-    // );
-    // assert_eq!(mscratch, 1);
-}
+    let mscratch: u64;
+    rasm!(
+        // Set the trap handler
+        "la {val}, {trap_handler}",
+        "csrw mtvec, {val}",
 
+        // Initialiaze mscratch to 0, trap, and check the newt mscratch value.
+        // See `_tracing_trap_handler`, which sets mscratch to 1.
+        "csrw mscratch, x0",    // Initialize mscratch to 0
+        "csrw invalid_csr, x1", // Attempt to write to an invalid CSR
+        "csrr {val}, mscratch", // After the trap, mscratch should be 1 (see _tracing_trap_handler)
+        val = out(reg) mscratch,
+        trap_handler = sym _tracing_trap_handler,
+    );
+    assert_eq!(mscratch, 1);
+}
 
 // Trap handler that sets `mscratch` to 1 and skip the trapping instruction.
 naked_rasm!(

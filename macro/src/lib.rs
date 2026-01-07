@@ -18,6 +18,7 @@ use arch::Arch;
 use asm_parser::{AsmLine, Instr, parse_instructions};
 use macro_parser::{AsmInput, AsmOperand, KindRegister, OperandKind, RegisterOperand};
 
+use crate::arch::InstrToken;
 use crate::asm_parser::ReturnType;
 use crate::relooper::{Conditional, Shape, StructuredProgram};
 
@@ -28,7 +29,7 @@ struct Context<A> {
     pub symbols: HashMap<String, Path>,
     pub consts: HashMap<String, Expr>,
     pub softcore: Expr,
-    pub trap_handlers: Option<Vec<Expr>>,
+    pub trap_handlers: Vec<Expr>,
     #[allow(unused)]
     pub arch: A,
 }
@@ -76,7 +77,7 @@ fn build_operand_register_map<A>(
     let mut register_allocation = Vec::new();
     let mut placeholder_instantiation = HashMap::new();
     let mut softcore = None;
-    let mut trap_handlers = None;
+    let mut trap_handlers = Vec::new();
     let mut symbols = HashMap::new();
     let mut consts = HashMap::new();
     let mut reg_counter = 1;
@@ -143,7 +144,7 @@ fn build_operand_register_map<A>(
         } else if let AsmOperand::Softcore(expr) = operand {
             softcore = Some(expr);
         } else if let AsmOperand::SoftcoreTrapHandlers(handlers) = operand {
-            trap_handlers = Some(handlers.clone());
+            trap_handlers = handlers.clone();
         }
     }
 
@@ -229,12 +230,12 @@ fn generate_softcore_code<A: Arch>(prog: StructuredProgram<A>) -> proc_macro2::T
     let prologue = if setup_code.is_empty() {
         quote! {}
     } else {
-        generate_softcore_block(quote! { #(#setup_code)* }, &[], &prog.ctx)
+        wrap_infallible_code(quote! { #(#setup_code)* }, &prog.ctx)
     };
     let epilogue = if output_registers.is_empty() {
         quote! {}
     } else {
-        let epilogue_block = generate_softcore_block(quote! {}, &output_registers, &prog.ctx);
+        let epilogue_block = extract_registers(&output_registers, &prog.ctx);
         quote! {
             (#(#assignments,)*) = #epilogue_block;
         }
@@ -251,8 +252,38 @@ fn generate_softcore_code<A: Arch>(prog: StructuredProgram<A>) -> proc_macro2::T
     }
 }
 
-fn generate_softcore_block<A: Arch>(
+/// Wrap infallible code within a softcore context.
+fn wrap_infallible_code<A: Arch>(
     instruction_code: proc_macro2::TokenStream,
+    ctx: &Context<A>,
+) -> proc_macro2::TokenStream {
+    let softcore = &ctx.softcore;
+    quote! {
+        #softcore(|core| {
+            #instruction_code;
+        });
+    }
+}
+
+/// Wrap fallible code within a softcore context.
+fn wrap_fallible_code<A: Arch>(
+    instruction_code: proc_macro2::TokenStream,
+    ctx: &Context<A>,
+) -> proc_macro2::TokenStream {
+    let softcore = &ctx.softcore;
+    let trap_handlers = &ctx.trap_handlers;
+    quote! {
+        match #softcore(|core| {
+            #instruction_code
+        }) {
+            Trap::Some(addr) => handle_trap(addr, &[#(#trap_handlers),*]),
+            Trap::None => (),
+        };
+    }
+}
+
+/// Extract registers (as a tuple) from the software core.
+fn extract_registers<A: Arch>(
     output_registers: &[&str],
     ctx: &Context<A>,
 ) -> proc_macro2::TokenStream {
@@ -272,7 +303,6 @@ fn generate_softcore_block<A: Arch>(
 
     quote! {
         #softcore(|core| {
-            #instruction_code
             #returned_regs
         });
     }
@@ -284,12 +314,12 @@ fn generate_structured_code<A: Arch>(shape: &Shape, ctx: &Context<A>) -> proc_ma
             let mut code = proc_macro2::TokenStream::new();
             for instr in instrs {
                 let tokens = match riscv::emit_softcore_instr(instr, ctx) {
-                    Ok(tokens) => tokens,
+                    Ok(InstrToken::MayTrap(tokens)) => wrap_fallible_code(tokens, ctx),
+                    Ok(InstrToken::Infallible(tokens)) => wrap_infallible_code(tokens, ctx),
                     Err(err) => err.to_compile_error(),
                 };
                 code.extend(tokens);
             }
-            let block = generate_softcore_block(code, &[], ctx);
             let next = if let Some(next_shape) = next {
                 generate_structured_code(next_shape, ctx)
             } else {
@@ -298,7 +328,7 @@ fn generate_structured_code<A: Arch>(shape: &Shape, ctx: &Context<A>) -> proc_ma
 
             quote! {
                 // The instructions from that block
-                #block
+                #code
 
                 // The rest of the code
                 #next
@@ -335,13 +365,24 @@ fn generate_structured_code<A: Arch>(shape: &Shape, ctx: &Context<A>) -> proc_ma
             let reg_update = if reg_update.is_empty() {
                 quote! {}
             } else {
-                generate_softcore_block(reg_update, &[], ctx)
+                wrap_infallible_code(reg_update, ctx)
             };
 
             // Create a block to extract the arguments, and the next block to execute
-            let extract_args_block =
-                generate_softcore_block(quote! {}, A::abi_registers(abi, call.num_args), ctx);
+            let extract_args_block = extract_registers(A::abi_registers(abi, call.num_args), ctx);
             let next = next.as_ref().map(|x| generate_structured_code(x, ctx));
+            let next_is_empty = match &next {
+                Some(next) => next.is_empty(),
+                None => true,
+            };
+
+            // Supress unreachable warning of code come after the function call.
+            // This is required because the function can have a `!` return type.
+            let allow_unreachable = if reg_update.is_empty() && next_is_empty {
+                quote! {}
+            } else {
+                quote! { #[allow(unreachable_code)] }
+            };
 
             quote! {
                 // Extract the arguments from the registers
@@ -354,7 +395,7 @@ fn generate_structured_code<A: Arch>(shape: &Shape, ctx: &Context<A>) -> proc_ma
 
                 // Actually call the function
                 #fn_call
-                #[allow(unreachable_code)] // because the function can return `!` (never)
+                #allow_unreachable
                 #reg_update
 
                 // We are done, continue
@@ -369,7 +410,7 @@ fn generate_structured_code<A: Arch>(shape: &Shape, ctx: &Context<A>) -> proc_ma
         } => {
             // First, write a softcore block to extract the necessary registers
             let [left, right] = cond.get_regs();
-            let extract_regs = generate_softcore_block(quote! {}, &[left, right], ctx);
+            let extract_regs = extract_registers(&[left, right], ctx);
 
             // Build the condition
             let left = quote! { left };
@@ -429,13 +470,10 @@ pub fn asm(input: TokenStream) -> TokenStream {
         {
             #[allow(unused_imports)]
             use ::softcore_asm_rv64::softcore_rv64::{
-                Core,
-                ast,
-                prelude::bv,
-                registers as reg,
+                Core, Trap, ast, prelude::bv, registers as reg,
                 raw::{iop, rop, sop, csrop, csr_name_map_backwards, self},
             };
-            use ::softcore_asm_rv64::FromRegister;
+            use ::softcore_asm_rv64::{FromRegister, handle_trap};
             #softcore_code
         }
     }

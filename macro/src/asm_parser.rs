@@ -47,6 +47,7 @@ pub enum Attribute {
     ReplaceWith {
         instr: Instr,
     },
+    Static,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

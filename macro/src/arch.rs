@@ -8,6 +8,14 @@ use std::collections::HashMap;
 use syn::Error;
 use syn::Path;
 
+/// Tokens to emulate an instruction in pure Rust code.
+pub enum InstrToken {
+    /// This instruction may cause a trap, which must be checked for.
+    MayTrap(TokenStream),
+    /// This instruction never traps.
+    Infallible(TokenStream),
+}
+
 pub trait Arch {
     /// If the instruction is a control flow instruction, returns the corresponding condition and
     /// destination.
