@@ -284,49 +284,49 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
             let rd = Riscv::emit_reg(&ops[0]);
             let csr = emit_csr(&ops[1]);
             let rs1 = Riscv::emit_reg(&ops[2]);
-            Ok(quote! { core.csrrw(#rd, #csr, #rs1).unwrap(); })
+            Ok(quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRW))); })
         }
         "csrrs" => {
             check_nb_op(instr, 3)?;
             let rd = Riscv::emit_reg(&ops[0]);
             let csr = emit_csr(&ops[1]);
             let rs1 = Riscv::emit_reg(&ops[2]);
-            Ok(quote! { core.csrrs(#rd, #csr, #rs1).unwrap(); })
+            Ok(quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRS))); })
         }
         "csrrc" => {
             check_nb_op(instr, 3)?;
             let rd = Riscv::emit_reg(&ops[0]);
             let csr = emit_csr(&ops[1]);
             let rs1 = Riscv::emit_reg(&ops[2]);
-            Ok(quote! { core.csrrc(#rd, #csr, #rs1).unwrap(); })
+            Ok(quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRC))); })
         }
         "csrr" => {
             check_nb_op(instr, 2)?;
             let rd = Riscv::emit_reg(&ops[0]);
             let csr = emit_csr(&ops[1]);
             let rs1 = Riscv::emit_reg("x0");
-            Ok(quote! { core.csrrs(#rd, #csr, #rs1).unwrap(); })
+            Ok(quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRS))); })
         }
         "csrw" => {
             check_nb_op(instr, 2)?;
             let rd = Riscv::emit_reg("x0");
             let csr = emit_csr(&ops[0]);
             let rs1 = Riscv::emit_reg(&ops[1]);
-            Ok(quote! { core.csrrw(#rd, #csr, #rs1).unwrap(); })
+            Ok(quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRW))); })
         }
         "csrs" => {
             check_nb_op(instr, 2)?;
             let rd = Riscv::emit_reg("x0");
             let csr = emit_csr(&ops[0]);
             let rs1 = Riscv::emit_reg(&ops[1]);
-            Ok(quote! { core.csrrs(#rd, #csr, #rs1).unwrap(); })
+            Ok(quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRS))); })
         }
         "csrc" => {
             check_nb_op(instr, 2)?;
             let rd = Riscv::emit_reg("x0");
             let csr = emit_csr(&ops[0]);
             let rs1 = Riscv::emit_reg(&ops[1]);
-            Ok(quote! { core.csrrc(#rd, #csr, #rs1).unwrap(); })
+            Ok(quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRC))); })
         }
 
         // Loads and Stores
