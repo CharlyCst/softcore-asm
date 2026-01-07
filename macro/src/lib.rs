@@ -28,6 +28,7 @@ struct Context<A> {
     pub symbols: HashMap<String, Path>,
     pub consts: HashMap<String, Expr>,
     pub softcore: Expr,
+    pub trap_handlers: Option<Vec<Expr>>,
     #[allow(unused)]
     pub arch: A,
 }
@@ -75,6 +76,7 @@ fn build_operand_register_map<A>(
     let mut register_allocation = Vec::new();
     let mut placeholder_instantiation = HashMap::new();
     let mut softcore = None;
+    let mut trap_handlers = None;
     let mut symbols = HashMap::new();
     let mut consts = HashMap::new();
     let mut reg_counter = 1;
@@ -140,6 +142,8 @@ fn build_operand_register_map<A>(
             }
         } else if let AsmOperand::Softcore(expr) = operand {
             softcore = Some(expr);
+        } else if let AsmOperand::SoftcoreTrapHandlers(handlers) = operand {
+            trap_handlers = Some(handlers.clone());
         }
     }
 
@@ -154,6 +158,7 @@ fn build_operand_register_map<A>(
             consts,
             arch,
             softcore,
+            trap_handlers,
         },
         placeholder_instantiation,
     ))
