@@ -433,7 +433,7 @@ pub fn asm(input: TokenStream) -> TokenStream {
                 ast,
                 prelude::bv,
                 registers as reg,
-                raw::{iop, rop, sop, csr_name_map_backwards, self},
+                raw::{iop, rop, sop, csrop, csr_name_map_backwards, self},
             };
             use ::softcore_asm_rv64::FromRegister;
             #softcore_code
