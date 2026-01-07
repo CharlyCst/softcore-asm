@@ -21,6 +21,8 @@ pub enum AsmOperand {
     Options(Expr),
     /// A function that expose the core to operate on
     Softcore(Expr),
+    /// A list of expected trap handlers
+    SoftcoreTrapHandlers(Vec<Expr>),
 }
 
 #[derive(Clone)]
@@ -159,10 +161,18 @@ impl Parse for AsmOperand {
             let expr: Expr = syn::parse2(quote! { (#remaining_tokens) })?;
             Ok(AsmOperand::Options(expr))
         } else if input.peek(Ident) && input.fork().parse::<Ident>().unwrap() == "softcore" {
-            input.parse::<Ident>()?; // consume "options"
+            input.parse::<Ident>()?; // consume "softcore"
             let content;
             syn::parenthesized!(content in input);
             Ok(AsmOperand::Softcore(content.parse::<Expr>()?))
+        } else if input.peek(Ident)
+            && input.fork().parse::<Ident>().unwrap() == "softcore_trap_handlers"
+        {
+            input.parse::<Ident>()?; // consume "softcore_trap_handler"
+            let content;
+            syn::parenthesized!(content in input);
+            let exprs = syn::punctuated::Punctuated::<Expr, Token![,]>::parse_terminated(&content)?;
+            Ok(AsmOperand::SoftcoreTrapHandlers(exprs.into_iter().collect()))
         } else {
             Ok(AsmOperand::Register(input.parse::<RegisterOperand>()?))
         }
@@ -501,5 +511,37 @@ mod tests {
         assert_eq!(parsed.template.len(), 2);
         assert_eq!(parsed.template[0].value(), "li {tmp}, 0x80");
         assert_eq!(parsed.template[1].value(), "csrw pmpaddr1, {addr}");
+    }
+
+    #[test]
+    fn asm_operand_softcore_trap_handler() {
+        // Test single handler
+        let tokens = quote! {softcore_trap_handlers(handler_one as usize)};
+        let operand = syn::parse2::<AsmOperand>(tokens).unwrap();
+        match operand {
+            AsmOperand::SoftcoreTrapHandlers(handlers) => {
+                assert_eq!(handlers.len(), 1);
+            }
+            _ => panic!("Expected SoftcoreTrapHandlers variant"),
+        }
+
+        // Test multiple handlers
+        let tokens = quote! {softcore_trap_handlers(handler_one as usize, handler_two as usize)};
+        let operand = syn::parse2::<AsmOperand>(tokens).unwrap();
+        match operand {
+            AsmOperand::SoftcoreTrapHandlers(handlers) => {
+                assert_eq!(handlers.len(), 2);
+            }
+            _ => panic!("Expected SoftcoreTrapHandlers variant"),
+        }
+
+        // Test in full AsmInput context
+        let tokens = quote! {
+            "mret",
+            softcore(path::to::function),
+            softcore_trap_handlers(handler_one as usize, handler_two as usize)
+        };
+        let parsed = syn::parse2::<AsmInput>(tokens).unwrap();
+        assert_eq!(parsed.operands.len(), 2);
     }
 }
