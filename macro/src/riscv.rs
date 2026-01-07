@@ -1,4 +1,4 @@
-use crate::arch::Arch;
+use crate::arch::{Arch, InstrToken};
 use crate::asm_parser::{Attribute, Expr as NumExpr, ReturnType};
 use crate::relooper::{Conditional, FnCall, LabelTerminator};
 use crate::{Context, Instr, asm_parser};
@@ -17,9 +17,9 @@ macro_rules! rtype {
         let rd = Riscv::emit_reg(&$instr.operands[0]);
         let rs1 = Riscv::emit_reg(&$instr.operands[1]);
         let rs2 = Riscv::emit_reg(&$instr.operands[2]);
-        Ok(quote! {
-            core.execute(ast::RTYPE((#rs2, #rs1, #rd, rop::$op)));
-        })
+        Ok(InstrToken::MayTrap(quote! {
+            core.execute(ast::RTYPE((#rs2, #rs1, #rd, rop::$op)))
+        }))
     }};
 }
 
@@ -30,9 +30,9 @@ macro_rules! itype {
         let rd = Riscv::emit_reg(&$instr.operands[0]);
         let rs1 = Riscv::emit_reg(&$instr.operands[1]);
         let imm = emit_integer(&$instr.operands[2], $consts);
-        Ok(quote! {
-            core.execute(ast::ITYPE((bv(#imm), #rs1, #rd, iop::$op)));
-        })
+        Ok(InstrToken::MayTrap(quote! {
+            core.execute(ast::ITYPE((bv(#imm), #rs1, #rd, iop::$op)))
+        }))
     }};
 }
 
@@ -43,9 +43,9 @@ macro_rules! shiftiop {
         let rd = Riscv::emit_reg(&$instr.operands[0]);
         let rs1 = Riscv::emit_reg(&$instr.operands[1]);
         let imm = emit_integer(&$instr.operands[2], $consts);
-        Ok(quote! {
-            core.execute(ast::SHIFTIOP((bv(#imm), #rs1, #rd, sop::$op)));
-        })
+        Ok(InstrToken::MayTrap(quote! {
+            core.execute(ast::SHIFTIOP((bv(#imm), #rs1, #rd, sop::$op)))
+        }))
     }};
 }
 
@@ -56,9 +56,9 @@ macro_rules! mul {
         let rd = Riscv::emit_reg(&$instr.operands[0]);
         let rs1 = Riscv::emit_reg(&$instr.operands[1]);
         let rs2 = Riscv::emit_reg(&$instr.operands[2]);
-        Ok(quote! {
-            core.execute(ast::MUL((#rs2, #rs1, #rd, raw::encdec_mul_op_backwards(bv::<3>($op_bits)))));
-        })
+        Ok(InstrToken::MayTrap(quote! {
+            core.execute(ast::MUL((#rs2, #rs1, #rd, raw::encdec_mul_op_backwards(bv::<3>($op_bits)))))
+        }))
     }};
 }
 
@@ -273,7 +273,7 @@ impl Arch for Riscv {
     }
 }
 
-pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenStream, Error> {
+pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrToken, Error> {
     let syms = &ctx.symbols;
     let consts = &ctx.consts;
     let ops = &instr.operands;
@@ -284,49 +284,63 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
             let rd = Riscv::emit_reg(&ops[0]);
             let csr = emit_csr(&ops[1]);
             let rs1 = Riscv::emit_reg(&ops[2]);
-            Ok(quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRW))); })
+            Ok(InstrToken::MayTrap(
+                quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRW))) },
+            ))
         }
         "csrrs" => {
             check_nb_op(instr, 3)?;
             let rd = Riscv::emit_reg(&ops[0]);
             let csr = emit_csr(&ops[1]);
             let rs1 = Riscv::emit_reg(&ops[2]);
-            Ok(quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRS))); })
+            Ok(InstrToken::MayTrap(
+                quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRS))) },
+            ))
         }
         "csrrc" => {
             check_nb_op(instr, 3)?;
             let rd = Riscv::emit_reg(&ops[0]);
             let csr = emit_csr(&ops[1]);
             let rs1 = Riscv::emit_reg(&ops[2]);
-            Ok(quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRC))); })
+            Ok(InstrToken::MayTrap(
+                quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRC))) },
+            ))
         }
         "csrr" => {
             check_nb_op(instr, 2)?;
             let rd = Riscv::emit_reg(&ops[0]);
             let csr = emit_csr(&ops[1]);
             let rs1 = Riscv::emit_reg("x0");
-            Ok(quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRS))); })
+            Ok(InstrToken::MayTrap(
+                quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRS))) },
+            ))
         }
         "csrw" => {
             check_nb_op(instr, 2)?;
             let rd = Riscv::emit_reg("x0");
             let csr = emit_csr(&ops[0]);
             let rs1 = Riscv::emit_reg(&ops[1]);
-            Ok(quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRW))); })
+            Ok(InstrToken::MayTrap(
+                quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRW))) },
+            ))
         }
         "csrs" => {
             check_nb_op(instr, 2)?;
             let rd = Riscv::emit_reg("x0");
             let csr = emit_csr(&ops[0]);
             let rs1 = Riscv::emit_reg(&ops[1]);
-            Ok(quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRS))); })
+            Ok(InstrToken::MayTrap(
+                quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRS))) },
+            ))
         }
         "csrc" => {
             check_nb_op(instr, 2)?;
             let rd = Riscv::emit_reg("x0");
             let csr = emit_csr(&ops[0]);
             let rs1 = Riscv::emit_reg(&ops[1]);
-            Ok(quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRC))); })
+            Ok(InstrToken::MayTrap(
+                quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRC))) },
+            ))
         }
 
         // Loads and Stores
@@ -336,7 +350,9 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
             check_nb_op(instr, 2)?;
             let rd = Riscv::emit_reg(&ops[0]);
             let value = emit_integer(&ops[1], consts);
-            Ok(quote! { core.set(#rd, #value as u64); })
+            Ok(InstrToken::Infallible(
+                quote! { core.set(#rd, #value as u64); },
+            ))
         }
         "la" => {
             // Load address is a pseudo-instruction, it relies on relocations to find the address
@@ -346,129 +362,131 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
             check_nb_op(instr, 2)?;
             let rd = Riscv::emit_reg(&ops[0]);
             let sym_addr = emit_symbol_addr(&ops[1], syms);
-            Ok(quote! { core.set(#rd, #sym_addr as u64); })
+            Ok(InstrToken::Infallible(
+                quote! { core.set(#rd, #sym_addr as u64); },
+            ))
         }
         "ld" => {
             check_nb_op(instr, 2)?;
             let rd = Riscv::emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
-            Ok(quote! {
+            Ok(InstrToken::Infallible(quote! {
                 let addr = core::ptr::with_exposed_provenance::<u64>(
                     #imm.wrapping_add(core.get(#rs1)) as usize);
                 let val = core::ptr::read(addr);
                 core.set(#rd, val as u64);
-            })
+            }))
         }
         "lwu" => {
             check_nb_op(instr, 2)?;
             let rd = Riscv::emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
-            Ok(quote! {
+            Ok(InstrToken::Infallible(quote! {
                 let addr = core::ptr::with_exposed_provenance::<u32>(
                     #imm.wrapping_add(core.get(#rs1)) as usize);
                 let val = core::ptr::read(addr);
                 core.set(#rd, val as u64);
-            })
+            }))
         }
         "lw" => {
             check_nb_op(instr, 2)?;
             let rd = Riscv::emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
-            Ok(quote! {
+            Ok(InstrToken::Infallible(quote! {
                 let addr = core::ptr::with_exposed_provenance::<i32>(
                     #imm.wrapping_add(core.get(#rs1)) as usize);
                 let val = core::ptr::read(addr);
                 core.set(#rd, val as i64 as u64);
-            })
+            }))
         }
         "lhu" => {
             check_nb_op(instr, 2)?;
             let rd = Riscv::emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
-            Ok(quote! {
+            Ok(InstrToken::Infallible(quote! {
                 let addr = core::ptr::with_exposed_provenance::<u16>(
                     #imm.wrapping_add(core.get(#rs1)) as usize);
                 let val = core::ptr::read(addr);
                 core.set(#rd, val as u64);
-            })
+            }))
         }
         "lh" => {
             check_nb_op(instr, 2)?;
             let rd = Riscv::emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
-            Ok(quote! {
+            Ok(InstrToken::Infallible(quote! {
                 let addr = core::ptr::with_exposed_provenance::<i16>(
                     #imm.wrapping_add(core.get(#rs1)) as usize);
                 let val = core::ptr::read(addr);
                 core.set(#rd, val as i64 as u64);
-            })
+            }))
         }
         "lbu" => {
             check_nb_op(instr, 2)?;
             let rd = Riscv::emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
-            Ok(quote! {
+            Ok(InstrToken::Infallible(quote! {
                 let addr = core::ptr::with_exposed_provenance::<u8>(
                     #imm.wrapping_add(core.get(#rs1)) as usize);
                 let val = core::ptr::read(addr);
                 core.set(#rd, val as u64);
-            })
+            }))
         }
         "lb" => {
             check_nb_op(instr, 2)?;
             let rd = Riscv::emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
-            Ok(quote! {
+            Ok(InstrToken::Infallible(quote! {
                 let addr = core::ptr::with_exposed_provenance::<i8>(
                     #imm.wrapping_add(core.get(#rs1)) as usize);
                 let val = core::ptr::read(addr);
                 core.set(#rd, val as i64 as u64);
-            })
+            }))
         }
         "sd" => {
             check_nb_op(instr, 2)?;
             let rs2 = Riscv::emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
-            Ok(quote! {
+            Ok(InstrToken::Infallible(quote! {
                 let val = core.get(#rs2);
                 let addr = core::ptr::with_exposed_provenance_mut::<u64>(
                     #imm.wrapping_add(core.get(#rs1)) as usize);
                 let addr = (#imm.wrapping_add(core.get(#rs1))) as usize as *mut u64;
                 core::ptr::write(addr, val as u64);
-            })
+            }))
         }
         "sw" => {
             check_nb_op(instr, 2)?;
             let rs2 = Riscv::emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
-            Ok(quote! {
+            Ok(InstrToken::Infallible(quote! {
                 let val = core.get(#rs2);
                 let addr = core::ptr::with_exposed_provenance_mut::<u32>(
                     #imm.wrapping_add(core.get(#rs1)) as usize);
                 core::ptr::write(addr, val as u32);
-            })
+            }))
         }
         "sh" => {
             check_nb_op(instr, 2)?;
             let rs2 = Riscv::emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
-            Ok(quote! {
+            Ok(InstrToken::Infallible(quote! {
                 let val = core.get(#rs2);
                 let addr = core::ptr::with_exposed_provenance_mut::<u16>(
                     #imm.wrapping_add(core.get(#rs1)) as usize);
                 core::ptr::write(addr, val as u16);
-            })
+            }))
         }
         "sb" => {
             check_nb_op(instr, 2)?;
             let rs2 = Riscv::emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
-            Ok(quote! {
+            Ok(InstrToken::Infallible(quote! {
                 let val = core.get(#rs2);
                 let addr = core::ptr::with_exposed_provenance_mut::<u8>(
                     #imm.wrapping_add(core.get(#rs1)) as usize);
                 core::ptr::write(addr, val as u8);
-            })
+            }))
         }
 
         // RType
@@ -520,33 +538,33 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
             check_nb_op(instr, 1)?;
             let rs1 = Riscv::emit_reg(&ops[0]);
             let rd = Riscv::emit_reg("x0");
-            Ok(quote! { core.execute(ast::JALR((bv(0), #rs1, #rd))); })
+            Ok(InstrToken::MayTrap(quote! { core.execute(ast::JALR((bv(0), #rs1, #rd))) }))
         }
 
         // System
         "mret" => {
             check_nb_op(instr, 0)?;
-            Ok(quote! { core.execute(ast::MRET(())); })
+            Ok(InstrToken::MayTrap(quote! { core.execute(ast::MRET(())) }))
         }
         "sret" => {
             check_nb_op(instr, 0)?;
-            Ok(quote! { core.execute(ast::SRET(())); })
+            Ok(InstrToken::MayTrap(quote! { core.execute(ast::SRET(())) }))
         }
         "ecall" => {
             check_nb_op(instr, 0)?;
-            Ok(quote! { core.execute(ast::ECALL(())); })
+            Ok(InstrToken::MayTrap(quote! { core.execute(ast::ECALL(())) }))
         }
         "ebreak" => {
             check_nb_op(instr, 0)?;
-            Ok(quote! { core.execute(ast::EBREAK(())); })
+            Ok(InstrToken::MayTrap(quote! { core.execute(ast::EBREAK(())) }))
         }
         "wfi" => {
             check_nb_op(instr, 0)?;
-            Ok(quote! { core.execute(ast::WFI(())); })
+            Ok(InstrToken::MayTrap(quote! { core.execute(ast::WFI(())) }))
         }
         "fence.i" => {
             check_nb_op(instr, 0)?;
-            Ok(quote! { core.execute(ast::FENCEI(())); })
+            Ok(InstrToken::MayTrap(quote! { core.execute(ast::FENCEI(())) }))
         }
         "sfence.vma" => {
             // The assembly can allow omitting some arguments
@@ -558,15 +576,15 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
                 check_nb_op(instr, 2)?;
                 (Riscv::emit_reg(&ops[0]), Riscv::emit_reg(&ops[1]))
             };
-            Ok(quote! { core.execute(ast::SFENCE_VMA((#vaddr, #asid))); })
+            Ok(InstrToken::MayTrap(quote! { core.execute(ast::SFENCE_VMA((#vaddr, #asid))) }))
         }
         "hfence.gvma" => {
             // Not currently supported in the Sail model, emit a no-op.
-            Ok(quote! {})
+            Ok(InstrToken::Infallible(quote! {}))
         }
         "hfence.vvma" => {
             // Not currently supported in the Sail model, emit a no-op.
-            Ok(quote! {})
+            Ok(InstrToken::Infallible(quote! {}))
         }
 
         // Unknown instructions
@@ -677,7 +695,7 @@ fn emit_immediate_offset(
 
 fn emit_symbol_addr(sym: &str, syms: &HashMap<String, Path>) -> TokenStream {
     if let Some(path) = syms.get(sym) {
-        quote! {(&raw const #path) as *const _}
+        quote! {#path as *const ()}
     } else {
         Error::new(
             Span::call_site(),

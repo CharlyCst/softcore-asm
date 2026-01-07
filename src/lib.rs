@@ -48,3 +48,16 @@ impl<A> FromRegister for *mut A {
         value as usize as *mut _
     }
 }
+
+// —————————————————————————————— Trap Handler —————————————————————————————— //
+
+pub fn handle_trap(addr: u64, trap_handlers: &[extern "C" fn()]) {
+    for handler in trap_handlers {
+        if *handler as *const () as u64 == addr {
+            handler();   
+            return;
+        }
+    }
+
+    panic!("Trapped with no valid trap handler registered");
+}
