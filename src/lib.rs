@@ -54,7 +54,7 @@ impl<A> FromRegister for *mut A {
 pub fn handle_trap(addr: u64, trap_handlers: &[extern "C" fn()]) {
     for handler in trap_handlers {
         if *handler as *const () as u64 == addr {
-            handler();   
+            handler();
             return;
         }
     }

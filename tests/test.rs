@@ -724,28 +724,28 @@ fn fn_call_from_assembly() {
     assert_eq!(result, 142);
 }
 
-// #[test]
-// fn statics() {
-//     static mut MY_STATIC: u64 = 0;
+#[test]
+fn statics() {
+    static mut MY_STATIC: u64 = 0;
 
-//     unsafe {
-//         let new_val: u64 = 0xcafe0bad0bed0;
-//         let static_addr: u64;
+    unsafe {
+        let new_val: u64 = 0xcafe0bad0bed0;
+        let static_addr: u64;
 
-//         rasm!(
-//             "//#[static]",
-//             "la {static_addr}, {my_static}",
-//             "sd {new_val}, 0({static_addr})",
-//             my_static = sym MY_STATIC,
-//             static_addr = out(reg) static_addr,
-//             new_val = in(reg) new_val,
-//         );
+        rasm!(
+            "//#[static]",
+            "la {static_addr}, {my_static}",
+            "sd {new_val}, 0({static_addr})",
+            my_static = sym MY_STATIC,
+            static_addr = out(reg) static_addr,
+            new_val = in(reg) new_val,
+        );
 
-//         assert_eq!(static_addr, (&raw mut MY_STATIC) as *const _ as u64);
-//         let static_val = core::ptr::read((&raw mut MY_STATIC) as *const u64);
-//         assert_eq!(new_val, static_val);
-//     }
-// }
+        assert_eq!(static_addr, (&raw mut MY_STATIC) as *const _ as u64);
+        let static_val = core::ptr::read((&raw mut MY_STATIC) as *const u64);
+        assert_eq!(new_val, static_val);
+    }
+}
 
 #[test]
 fn consts() {

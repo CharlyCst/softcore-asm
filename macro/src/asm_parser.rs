@@ -231,6 +231,7 @@ fn parse_attribute(pair: Pair<Rule>) -> Result<Attribute> {
             match attr_name {
                 "abi" => parse_abi_attribute(inner),
                 "replace_with" => parse_replace_with_attribute(inner),
+                "static" => parse_static_attribute(inner),
                 _ => Err(anyhow!("Unknown attribute: {}", attr_name)),
             }
         }
@@ -332,6 +333,25 @@ fn parse_replace_with_attribute(mut args: Pairs<Rule>) -> Result<Attribute> {
     let instr = parse_asm_instr_from_str(instr_str)?;
 
     Ok(Attribute::ReplaceWith { instr })
+}
+
+/// Parses a static attribute.
+///
+/// A static attribute indicates that the symbol should be treated as a static, not a function.
+///
+/// Example: `#[static]`
+///
+/// This would be used in assembly like:
+/// ```text
+/// // #[static]
+/// la x1, {my_static_symbol}
+/// ```
+fn parse_static_attribute(mut args: Pairs<Rule>) -> Result<Attribute> {
+    // static attribute should have no arguments
+    if args.next().is_some() {
+        return Err(anyhow!("static attribute takes no arguments"));
+    }
+    Ok(Attribute::Static)
 }
 
 fn parse_asm_instr(pair: Pair<Rule>, attributes: Vec<Attribute>) -> Result<Instr> {
