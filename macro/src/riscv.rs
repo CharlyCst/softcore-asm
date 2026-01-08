@@ -345,7 +345,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
             // that. Instrad, we use Rust to find the address of the symbol directly.
             check_nb_op(instr, 2)?;
             let rd = Riscv::emit_reg(&ops[0]);
-            let sym_addr = emit_symbol_addr(&ops[1], syms);
+            let sym_addr = emit_symbol_addr(&ops[1], &instr.attributes, syms);
             Ok(quote! { core.set(#rd, #sym_addr as u64); })
         }
         "ld" => {
@@ -663,9 +663,20 @@ fn emit_immediate_offset(
     }
 }
 
-fn emit_symbol_addr(sym: &str, syms: &HashMap<String, Path>) -> TokenStream {
+fn emit_symbol_addr(
+    sym: &str,
+    attributes: &[Attribute],
+    syms: &HashMap<String, Path>,
+) -> TokenStream {
     if let Some(path) = syms.get(sym) {
-        quote! {(&raw const #path) as *const _}
+        let is_static = attributes.contains(&Attribute::Static);
+        if is_static {
+            // -        quote! {#path as *const ()}
+            // +        quote! {(&raw const #path) as *const _}
+            quote! {(&raw mut #path) as *const _}
+        } else {
+            quote! {#path as *const ()}
+        }
     } else {
         Error::new(
             Span::call_site(),

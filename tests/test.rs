@@ -733,6 +733,7 @@ fn symbols() {
         let sym_addr: u64;
 
         rasm!(
+            "// #[static]",
             "la {sym_addr}, {my_sym}",
             "sd {new_val}, 0({sym_addr})",
             my_sym = sym MY_SYMBOL,

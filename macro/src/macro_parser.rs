@@ -1,5 +1,7 @@
 //! Procedural Macro Parser
 
+use core::panic;
+
 use quote::quote;
 use syn::{
     Expr, ExprMacro, Ident, Lit, LitStr, Path, Token,
@@ -163,6 +165,17 @@ impl Parse for AsmOperand {
             let content;
             syn::parenthesized!(content in input);
             Ok(AsmOperand::Softcore(content.parse::<Expr>()?))
+        } else if input.peek(Ident)
+            && input.fork().parse::<Ident>().unwrap() == "softcore_trap_handlers"
+        {
+            panic!("We do not support trap handlers in the FlashPoint fork");
+            // input.parse::<Ident>()?; // consume "softcore_trap_handler"
+            // let content;
+            // syn::parenthesized!(content in input);
+            // let exprs = syn::punctuated::Punctuated::<Expr, Token![,]>::parse_terminated(&content)?;
+            // Ok(AsmOperand::SoftcoreTrapHandlers(
+            //     exprs.into_iter().collect(),
+            // ))
         } else {
             Ok(AsmOperand::Register(input.parse::<RegisterOperand>()?))
         }
