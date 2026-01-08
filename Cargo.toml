@@ -19,5 +19,11 @@ softcore-asm-macro = { path = "macro/", version = "0.2.0" }
 [workspace]
 members = [ "macro" ]
 
+# Packages published to crates.io
+default-members = [
+    ".",
+    "macro"
+]
+
 [workspace.dependencies]
 softcore-rv64 = "0.6.0"
