@@ -361,7 +361,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             // that. Instead, we use Rust to find the address of the symbol directly.
             check_nb_op(instr, 2)?;
             let rd = Riscv::emit_reg(&ops[0]);
-            let sym_addr = emit_symbol_addr(&ops[1], syms);
+            let sym_addr = emit_symbol_addr(&ops[1], &instr.attributes, syms);
             Ok(InstrToken::Infallible(
                 quote! { core.set(#rd, #sym_addr as u64); },
             ))
@@ -538,7 +538,9 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             check_nb_op(instr, 1)?;
             let rs1 = Riscv::emit_reg(&ops[0]);
             let rd = Riscv::emit_reg("x0");
-            Ok(InstrToken::MayTrap(quote! { core.execute(ast::JALR((bv(0), #rs1, #rd))) }))
+            Ok(InstrToken::MayTrap(
+                quote! { core.execute(ast::JALR((bv(0), #rs1, #rd))) },
+            ))
         }
 
         // System
@@ -556,7 +558,9 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
         }
         "ebreak" => {
             check_nb_op(instr, 0)?;
-            Ok(InstrToken::MayTrap(quote! { core.execute(ast::EBREAK(())) }))
+            Ok(InstrToken::MayTrap(
+                quote! { core.execute(ast::EBREAK(())) },
+            ))
         }
         "wfi" => {
             check_nb_op(instr, 0)?;
@@ -564,7 +568,9 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
         }
         "fence.i" => {
             check_nb_op(instr, 0)?;
-            Ok(InstrToken::MayTrap(quote! { core.execute(ast::FENCEI(())) }))
+            Ok(InstrToken::MayTrap(
+                quote! { core.execute(ast::FENCEI(())) },
+            ))
         }
         "sfence.vma" => {
             // The assembly can allow omitting some arguments
@@ -576,7 +582,9 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
                 check_nb_op(instr, 2)?;
                 (Riscv::emit_reg(&ops[0]), Riscv::emit_reg(&ops[1]))
             };
-            Ok(InstrToken::MayTrap(quote! { core.execute(ast::SFENCE_VMA((#vaddr, #asid))) }))
+            Ok(InstrToken::MayTrap(
+                quote! { core.execute(ast::SFENCE_VMA((#vaddr, #asid))) },
+            ))
         }
         "hfence.gvma" => {
             // Not currently supported in the Sail model, emit a no-op.
@@ -693,9 +701,18 @@ fn emit_immediate_offset(
     }
 }
 
-fn emit_symbol_addr(sym: &str, syms: &HashMap<String, Path>) -> TokenStream {
+fn emit_symbol_addr(
+    sym: &str,
+    attributes: &[Attribute],
+    syms: &HashMap<String, Path>,
+) -> TokenStream {
     if let Some(path) = syms.get(sym) {
-        quote! {#path as *const ()}
+        let is_static = attributes.contains(&Attribute::Static);
+        if is_static {
+            quote! {(&raw mut #path) as *const _}
+        } else {
+            quote! {#path as *const ()}
+        }
     } else {
         Error::new(
             Span::call_site(),

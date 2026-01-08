@@ -172,7 +172,9 @@ impl Parse for AsmOperand {
             let content;
             syn::parenthesized!(content in input);
             let exprs = syn::punctuated::Punctuated::<Expr, Token![,]>::parse_terminated(&content)?;
-            Ok(AsmOperand::SoftcoreTrapHandlers(exprs.into_iter().collect()))
+            Ok(AsmOperand::SoftcoreTrapHandlers(
+                exprs.into_iter().collect(),
+            ))
         } else {
             Ok(AsmOperand::Register(input.parse::<RegisterOperand>()?))
         }
