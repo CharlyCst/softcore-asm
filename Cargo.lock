@@ -187,7 +187,7 @@ dependencies = [
 
 [[package]]
 name = "softcore-asm-macro"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "pest",
@@ -201,7 +201,7 @@ dependencies = [
 
 [[package]]
 name = "softcore-asm-rv64"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "softcore-asm-macro",
  "softcore-rv64",
