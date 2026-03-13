@@ -1,6 +1,6 @@
 # Softcore-asm
 
-Softcore-asm is an experiment Rust macro that accept standard inline Rust assembly and translate it into the corresponding sequence of instructions against a [softcore-rs](github.com/CharlyCst/softcore-rs) CPU model.
+Softcore-asm is an experiment Rust macro that accept standard inline Rust assembly and translate it into the corresponding sequence of instructions against a [softcore-rs](https://github.com/CharlyCst/softcore-rs) CPU model.
 
 > **Warning:** This project is highly experimental: there is no backward compatibility nor correctness guarantees.
 
