@@ -770,7 +770,7 @@ fn miralis_trap_detector() {
         for i in 1..32 {
             core.set(raw::regidx::new(i as u8), 100 + i as u64);
         }
-        core.mepc = bv(TRAP_ADDR);
+        core.mepc = bv(64, TRAP_ADDR);
     });
 
     rasm!(

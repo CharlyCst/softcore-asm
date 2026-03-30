@@ -27,3 +27,6 @@ default-members = [
 
 [workspace.dependencies]
 softcore-rv64 = "0.6.0"
+
+[patch.crates-io]
+softcore-rv64 = { git = "https://github.com/CharlyCst/softcore-rs.git", branch = "vector" }
