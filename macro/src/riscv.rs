@@ -595,6 +595,82 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             Ok(InstrToken::Infallible(quote! {}))
         }
 
+        // V Extension
+        "vsetvli" => {
+            check_nb_op(instr, 6)?;
+            let rd = Riscv::emit_reg(&ops[0]);
+            let rs1 = Riscv::emit_reg(&ops[1]);
+            let sew = emit_sew(&ops[2]);
+            let lmul = emit_lmul(&ops[3]);
+            let vta = emit_tail_policy(&ops[4]);
+            let vma = emit_mask_policy(&ops[5]);
+            Ok(InstrToken::MayTrap(
+                quote! {
+                    core.execute(ast::VSETVLI((
+                        bv(1, #vma),
+                        bv(1, #vta),
+                        bv(3, #sew),
+                        bv(3, #lmul),
+                        #rs1,
+                        #rd
+                    )))
+                },
+            ))
+        }
+        "vle8.v" => {
+            check_nb_op(instr, 2)?;
+            let vd = emit_vreg(&ops[0]);
+            let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
+            // TODO(Gurvan): Transform into a macro to support vle8.v and other
+            // TODO: Vector store and load has to be implemented manually it seems since the model
+            // as no idea that memory exists
+            // - We have to query the core to know about the vtype, most importantly the grouping
+            // features
+            // - We then need to know the total size of the BitVector we are going to read
+            // - We then ...
+            Ok(InstrToken::MayTrap(
+                quote! {
+                    core.execute(ast::VLSEGTYPE((
+                        bv(3, 0), // No stride
+                        bv(1, 0), // TODO(Gurvan): For now we don't support mask
+                        #rs1,
+                        vlewidth::VLE8,
+                        #vd,
+                    )))
+                },
+            ))
+
+        }
+        "vmv.v.x" => {
+            check_nb_op(instr, 2)?;
+            let vd = emit_vreg(&ops[0]);
+            let rs1 = Riscv::emit_reg(&ops[1]);
+            Ok(InstrToken::MayTrap(
+                quote! {
+                    core.execute(ast::MOVETYPEX((
+                        #rs1,
+                        #vd
+                    )))
+                },
+            ))
+        }
+        "vse8.v" => {
+            check_nb_op(instr, 2)?;
+            /* TODO: For now, we don't support masking */
+            let vs3 = emit_vreg(&ops[0]);
+            let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
+            Ok(InstrToken::Infallible(quote! {
+                    let base_addr = #imm.wrapping_add(core.get(#rs1)) as usize;
+                    let elements = core.get_vec(#vs3);
+                    for (i, bv) in elements.into_iter().enumerate() {
+                        /* TODO: If this fail, we should set vstart */
+                        let addr = core::ptr::with_exposed_provenance_mut::<u8>(base_addr + i);
+                        let val = bv.to_raw_le()[0]; /* We only care about the first byte for vse8 */
+                        core::ptr::write(addr, val);
+                    }
+                }))
+        }
+
         // Unknown instructions
         _ => Err(Error::new(
             Span::call_site(),
@@ -731,6 +807,153 @@ fn emit_constant(cst: &str, consts: &HashMap<String, Expr>) -> TokenStream {
             format!("Could not find a constant named '{cst}'"),
         )
         .to_compile_error()
+    }
+}
+
+fn emit_vreg(reg: &str) -> TokenStream {
+    match reg {
+        "v0"  => quote! { reg::V0 },
+        "v1"  => quote! { reg::V1 },
+        "v2"  => quote! { reg::V2 },
+        "v3"  => quote! { reg::V3 },
+        "v4"  => quote! { reg::V4 },
+        "v5"  => quote! { reg::V5 },
+        "v6"  => quote! { reg::V6 },
+        "v7"  => quote! { reg::V7 },
+        "v8"  => quote! { reg::V8 },
+        "v9"  => quote! { reg::V9 },
+        "v10" => quote! { reg::V10 },
+        "v11" => quote! { reg::V11 },
+        "v12" => quote! { reg::V12 },
+        "v13" => quote! { reg::V13 },
+        "v14" => quote! { reg::V14 },
+        "v15" => quote! { reg::V15 },
+        "v16" => quote! { reg::V16 },
+        "v17" => quote! { reg::V17 },
+        "v18" => quote! { reg::V18 },
+        "v19" => quote! { reg::V19 },
+        "v20" => quote! { reg::V20 },
+        "v21" => quote! { reg::V21 },
+        "v22" => quote! { reg::V22 },
+        "v23" => quote! { reg::V23 },
+        "v24" => quote! { reg::V24 },
+        "v25" => quote! { reg::V25 },
+        "v26" => quote! { reg::V26 },
+        "v27" => quote! { reg::V27 },
+        "v28" => quote! { reg::V28 },
+        "v29" => quote! { reg::V29 },
+        "v30" => quote! { reg::V30 },
+        "v31" => quote! { reg::V31 },
+        _ => {
+            Error::new(
+                Span::call_site(),
+                format!("Unknown vector register: {reg}")
+            ).to_compile_error()
+        }
+    }
+}
+
+fn emit_sew(n: &str) -> TokenStream {
+    match n {
+        "e8"   => {
+            let v = 0 as u64;
+            quote! { #v }
+        },
+        "e16"  => {
+            let v = 1 as u64;
+            quote! { #v }
+        },
+        "e32"  =>  {
+            let v = 2 as u64;
+            quote! { #v }
+        },
+        "e64"  => {
+            let v = 3 as u64;
+            quote! { #v }
+        },
+        "e128" => {
+            let v = 4 as u64;
+            quote! { #v }
+        },
+        _ =>
+            Error::new(
+                Span::call_site(),
+                format!("Could not find a sew named '{n}'"),
+            ) .to_compile_error(),
+    }
+}
+
+fn emit_lmul(n: &str) -> TokenStream {
+    match n {
+        "m1"   => {
+            let v = 0 as u64;
+            quote! { #v }
+        },
+        "m2"  => {
+            let v = 1 as u64;
+            quote! { #v }
+        },
+        "m4"  =>  {
+            let v = 2 as u64;
+            quote! { #v }
+        },
+        "m8"  => {
+            let v = 3 as u64;
+            quote! { #v }
+        },
+        "mf8" => {
+            let v = 5 as u64;
+            quote! { #v }
+        },
+        "mf4" => {
+            let v = 6 as u64;
+            quote! { #v }
+        },
+        "mf2" => {
+            let v = 7 as u64;
+            quote! { #v }
+        },
+        _ =>
+            Error::new(
+                Span::call_site(),
+                format!("Could not find a lmul named '{n}'"),
+            ) .to_compile_error(),
+    }
+}
+
+fn emit_tail_policy(n: &str) -> TokenStream {
+    match n {
+        "tu"   => {
+            let v = 0 as u64;
+            quote! { #v }
+        },
+        "ta"  => {
+            let v = 1 as u64;
+            quote! { #v }
+        },
+        _ =>
+            Error::new(
+                Span::call_site(),
+                format!("Could not find a tail policy named '{n}'"),
+            ) .to_compile_error(),
+    }
+}
+
+fn emit_mask_policy(n: &str) -> TokenStream {
+    match n {
+        "mu"   => {
+            let v = 0 as u64;
+            quote! { #v }
+        },
+        "ma"  => {
+            let v = 1 as u64;
+            quote! { #v }
+        },
+        _ =>
+            Error::new(
+                Span::call_site(),
+                format!("Could not find a tail policy named '{n}'"),
+            ) .to_compile_error(),
     }
 }
 

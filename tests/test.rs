@@ -5,6 +5,7 @@ use std::thread_local;
 use softcore_rv64::prelude::bv;
 use softcore_rv64::registers as reg;
 use softcore_rv64::{Core, config, new_core};
+use softcore_rv64::raw::vlewidth;
 
 // Each thread gets its own copy of the core, this prevent tests using different threads inside a
 // same process to share the same core.
@@ -25,7 +26,7 @@ thread_local! {
     /// });
     /// ```
     pub static SOFT_CORE: RefCell<Core> = {
-        let mut core = new_core(config::U74);
+        let mut core = new_core(config::VECTOR_TEST);
         core.reset();
         RefCell::new(core)
     };
@@ -1048,3 +1049,121 @@ fn shift_immediate() {
 
     assert_eq!(result, 400);
 }
+
+#[test]
+fn vector_config() {
+    let requested_vl: u64 = 8;
+    let expected_vl: u64 = 1;
+    let actual_vl: u64;
+    let vtype_val: usize;
+
+    rasm!(
+        "vsetvli {vl_out}, {rs1}, e8, m1, ta, ma",
+        "csrr {vtype_out}, vtype",
+        rs1 = in(reg) requested_vl,
+        vl_out = out(reg) actual_vl,
+        vtype_out = out(reg) vtype_val,
+    );
+
+    assert_eq!(actual_vl, expected_vl);
+
+    // Check that the instruction was not illegal
+    let vill_mask = 1 << (usize::BITS - 1);
+    assert!(
+        (vtype_val & vill_mask) == 0,
+        "vsetvli resulted in an ILLEGAL configuration (VILL bit set)!"
+    );
+
+    let sew_mask = 0b111 << 3;
+    let actual_sew = (vtype_val & sew_mask) >> 3;
+    assert_eq!(actual_sew, 0, "SEW mismatch: Expected 'e8' (3), got {}", actual_sew);
+
+    let lmul_mask = 0b111;
+    let actual_lmul = vtype_val & lmul_mask;
+    assert_eq!(actual_lmul, 0, "LMUL mismatch: Expected 'm1' (0), got {}", actual_lmul);
+
+    let vta_bit  = 1 << 6;
+    assert!(
+        (vtype_val & vta_bit) != 0,
+        "Tail policy mismatch: Expected 'ta' to be set"
+    );
+
+    let vma_bit  = 1 << 7;
+    assert!(
+        (vtype_val & vma_bit) != 0,
+        "Mask policy mismatch: Expected 'ma' to be set"
+    );
+
+    SOFT_CORE.with_borrow_mut(|core| {
+        assert_eq!(core.vl.bits(), actual_vl);
+    });
+}
+
+// TODO: Need support for vle8.v, which we currently don't have
+// #[test]
+// fn vector_memory_mempcy() {
+//     unsafe {
+//         let mut mem_buffer = [0u8; 8];
+//         let input_data: [u8; 8] = [0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE];
+//         let addr = mem_buffer.as_mut_ptr() as usize;
+//
+//         let input_ptr = input_data.as_ptr() as usize;
+//         let actual_vl: u64;
+//
+//         rasm!(
+//             "vsetvli {vl}, {rs1}, e8, m1, ta, ma",
+//             "vle8.v v8, ({in_ptr})",
+//             "vse8.v v8, ({out_ptr})",
+//
+//             rs1 = in(reg) 8,
+//             vl = out(reg) actual_vl,
+//             in_ptr = in(reg) input_ptr,
+//             out_ptr = in(reg) addr,
+//         );
+//
+//         assert!(actual_vl >= 8, "VL was {}, but we needed at least 8 for this test", actual_vl);
+//         assert_eq!(mem_buffer, input_data, "vse8.v failed to store the correct bytes to memory");
+//     }
+// }
+
+#[test]
+fn vector_memory_memset() {
+    unsafe {
+        const MEM_BUFFER_SIZE: usize = 8;
+        let mut mem_buffer = [0u8; MEM_BUFFER_SIZE];
+        let addr = mem_buffer.as_mut_ptr() as usize;
+        let val_to_store: u64 = 0xAB;
+        let actual_vl: u64;
+
+        rasm!(
+            "vsetvli {vl}, {rs1}, e8, m1, ta, ma",
+            "vmv.v.x v8, {scalar_val}",
+            "vse8.v v8, ({out_ptr})",
+
+            rs1 = in(reg) MEM_BUFFER_SIZE,
+            vl = out(reg) actual_vl,
+            scalar_val = in(reg) val_to_store,
+            out_ptr = in(reg) addr,
+        );
+
+        for i in 0..MEM_BUFFER_SIZE {
+            if (i as u64) < actual_vl {
+                assert_eq!(
+                    mem_buffer[i], 0xAB,
+                    "Index {} should have been stored as 0xAB", i
+                );
+            } else {
+                assert_eq!(
+                    mem_buffer[i], 0x00,
+                    "Index {} is beyond VL ({}) and should be untouched (0x00)", i, actual_vl
+                );
+            }
+        }
+
+        SOFT_CORE.with_borrow_mut(|core| {
+            assert_eq!(core.vl.bits(), actual_vl);
+        });
+    }
+}
+
+// TODO(Gurvan): Write vector arithmetic test
