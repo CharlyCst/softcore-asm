@@ -27,3 +27,6 @@ default-members = [
 
 [workspace.dependencies]
 softcore-rv64 = "0.6.0"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
