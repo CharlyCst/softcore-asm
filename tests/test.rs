@@ -1092,6 +1092,14 @@ fn vector_config() {
     let actual_vl: u64;
     let vtype_val: usize;
 
+    // In our small config, vector register are a single byte wide.
+    // We are asking to process 8 elements (requested_vl), each 8 bit wide (e8), using one register
+    // (m1).
+    // Since a single vector register can only hold one byte or a single element, then we expect
+    // the returned vl to be one.
+    // TODO: Write the same test but using multiple registers (m1, m2, m3, m4).
+    // We CANNOT exceed a BitVector size of 64 for now without trapping
+
     rasm!(
         "vsetvli {vl_out}, {rs1}, e8, m1, ta, ma",
         "csrr {vtype_out}, vtype",
@@ -1102,7 +1110,6 @@ fn vector_config() {
 
     assert_eq!(actual_vl, expected_vl);
 
-    // Check that the instruction was not illegal
     let vill_mask = 1 << (usize::BITS - 1);
     assert!(
         (vtype_val & vill_mask) == 0,
@@ -1111,7 +1118,7 @@ fn vector_config() {
 
     let sew_mask = 0b111 << 3;
     let actual_sew = (vtype_val & sew_mask) >> 3;
-    assert_eq!(actual_sew, 0, "SEW mismatch: Expected 'e8' (3), got {}", actual_sew);
+    assert_eq!(actual_sew, 0, "SEW mismatch: Expected 'e8' (0), got {}", actual_sew);
 
     let lmul_mask = 0b111;
     let actual_lmul = vtype_val & lmul_mask;
@@ -1131,6 +1138,11 @@ fn vector_config() {
 
     SOFT_CORE.with_borrow_mut(|core| {
         assert_eq!(core.vl.bits(), actual_vl);
+        // TODO: Assert that sew and other corresponds?
+        // let sew = softcore_rv64::raw::get_sew(core, ());
+        // let lmul_pow = softcore_rv64::raw::get_lmul_pow(core, ()); // Should be 1.0
+        // let vlen = softcore_rv64::raw::get_vlen(core);     // Should be 64
+        // assert!(false, "SEW: {}, LMUL_pow: {}, VLEN: {}", sew, lmul_pow, vlen);
     });
 }
 
