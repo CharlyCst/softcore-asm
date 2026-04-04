@@ -18,7 +18,7 @@ macro_rules! rtype {
         let rs1 = Riscv::emit_reg(&$instr.operands[1]);
         let rs2 = Riscv::emit_reg(&$instr.operands[2]);
         Ok(InstrToken::MayTrap(quote! {
-            core.execute(ast::RTYPE((#rs2, #rs1, #rd, rop::$op)))
+            (*core).execute(ast::RTYPE((#rs2, #rs1, #rd, rop::$op)))
         }))
     }};
 }
@@ -31,7 +31,7 @@ macro_rules! itype {
         let rs1 = Riscv::emit_reg(&$instr.operands[1]);
         let imm = emit_integer(&$instr.operands[2], $consts);
         Ok(InstrToken::MayTrap(quote! {
-            core.execute(ast::ITYPE((bv(#imm), #rs1, #rd, iop::$op)))
+            (*core).execute(ast::ITYPE((bv(#imm), #rs1, #rd, iop::$op)))
         }))
     }};
 }
@@ -44,7 +44,7 @@ macro_rules! shiftiop {
         let rs1 = Riscv::emit_reg(&$instr.operands[1]);
         let imm = emit_integer(&$instr.operands[2], $consts);
         Ok(InstrToken::MayTrap(quote! {
-            core.execute(ast::SHIFTIOP((bv(#imm), #rs1, #rd, sop::$op)))
+            (*core).execute(ast::SHIFTIOP((bv(#imm), #rs1, #rd, sop::$op)))
         }))
     }};
 }
@@ -57,7 +57,7 @@ macro_rules! mul {
         let rs1 = Riscv::emit_reg(&$instr.operands[1]);
         let rs2 = Riscv::emit_reg(&$instr.operands[2]);
         Ok(InstrToken::MayTrap(quote! {
-            core.execute(ast::MUL((#rs2, #rs1, #rd, raw::encdec_mul_op_backwards(bv::<3>($op_bits)))))
+            (*core).execute(ast::MUL((#rs2, #rs1, #rd, raw::encdec_mul_op_backwards(bv::<3>($op_bits)))))
         }))
     }};
 }
@@ -266,7 +266,7 @@ impl Arch for Riscv {
             ReturnType::U64 | ReturnType::U32 | ReturnType::I64 | ReturnType::I32 => {
                 let ret_reg = Self::emit_reg("a0");
                 let call = quote! { let ret_val = #call; };
-                let update = quote! { core.set(#ret_reg, ret_val as u64); };
+                let update = quote! { (*core).set(#ret_reg, ret_val as u64); };
                 (call, update)
             }
         }
@@ -285,7 +285,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[1]);
             let rs1 = Riscv::emit_reg(&ops[2]);
             Ok(InstrToken::MayTrap(
-                quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRW))) },
+                quote! { (*core).execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRW))) },
             ))
         }
         "csrrs" => {
@@ -294,7 +294,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[1]);
             let rs1 = Riscv::emit_reg(&ops[2]);
             Ok(InstrToken::MayTrap(
-                quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRS))) },
+                quote! { (*core).execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRS))) },
             ))
         }
         "csrrc" => {
@@ -303,7 +303,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[1]);
             let rs1 = Riscv::emit_reg(&ops[2]);
             Ok(InstrToken::MayTrap(
-                quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRC))) },
+                quote! { (*core).execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRC))) },
             ))
         }
         "csrr" => {
@@ -312,7 +312,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[1]);
             let rs1 = Riscv::emit_reg("x0");
             Ok(InstrToken::MayTrap(
-                quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRS))) },
+                quote! { (*core).execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRS))) },
             ))
         }
         "csrw" => {
@@ -321,7 +321,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[0]);
             let rs1 = Riscv::emit_reg(&ops[1]);
             Ok(InstrToken::MayTrap(
-                quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRW))) },
+                quote! { (*core).execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRW))) },
             ))
         }
         "csrs" => {
@@ -330,7 +330,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[0]);
             let rs1 = Riscv::emit_reg(&ops[1]);
             Ok(InstrToken::MayTrap(
-                quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRS))) },
+                quote! { (*core).execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRS))) },
             ))
         }
         "csrc" => {
@@ -339,7 +339,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[0]);
             let rs1 = Riscv::emit_reg(&ops[1]);
             Ok(InstrToken::MayTrap(
-                quote! { core.execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRC))) },
+                quote! { (*core).execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRC))) },
             ))
         }
 
@@ -351,7 +351,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let rd = Riscv::emit_reg(&ops[0]);
             let value = emit_integer(&ops[1], consts);
             Ok(InstrToken::Infallible(
-                quote! { core.set(#rd, #value as u64); },
+                quote! { (*core).set(#rd, #value as u64); },
             ))
         }
         "la" => {
@@ -363,7 +363,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let rd = Riscv::emit_reg(&ops[0]);
             let sym_addr = emit_symbol_addr(&ops[1], &instr.attributes, syms);
             Ok(InstrToken::Infallible(
-                quote! { core.set(#rd, #sym_addr as u64); },
+                quote! { (*core).set(#rd, #sym_addr as u64); },
             ))
         }
         "ld" => {
@@ -372,9 +372,9 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(InstrToken::Infallible(quote! {
                 let addr = core::ptr::with_exposed_provenance::<u64>(
-                    #imm.wrapping_add(core.get(#rs1)) as usize);
+                    #imm.wrapping_add((*core).get(#rs1)) as usize);
                 let val = core::ptr::read(addr);
-                core.set(#rd, val as u64);
+                (*core).set(#rd, val as u64);
             }))
         }
         "lwu" => {
@@ -383,9 +383,9 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(InstrToken::Infallible(quote! {
                 let addr = core::ptr::with_exposed_provenance::<u32>(
-                    #imm.wrapping_add(core.get(#rs1)) as usize);
+                    #imm.wrapping_add((*core).get(#rs1)) as usize);
                 let val = core::ptr::read(addr);
-                core.set(#rd, val as u64);
+                (*core).set(#rd, val as u64);
             }))
         }
         "lw" => {
@@ -394,9 +394,9 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(InstrToken::Infallible(quote! {
                 let addr = core::ptr::with_exposed_provenance::<i32>(
-                    #imm.wrapping_add(core.get(#rs1)) as usize);
+                    #imm.wrapping_add((*core).get(#rs1)) as usize);
                 let val = core::ptr::read(addr);
-                core.set(#rd, val as i64 as u64);
+                (*core).set(#rd, val as i64 as u64);
             }))
         }
         "lhu" => {
@@ -405,9 +405,9 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(InstrToken::Infallible(quote! {
                 let addr = core::ptr::with_exposed_provenance::<u16>(
-                    #imm.wrapping_add(core.get(#rs1)) as usize);
+                    #imm.wrapping_add((*core).get(#rs1)) as usize);
                 let val = core::ptr::read(addr);
-                core.set(#rd, val as u64);
+                (*core).set(#rd, val as u64);
             }))
         }
         "lh" => {
@@ -416,9 +416,9 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(InstrToken::Infallible(quote! {
                 let addr = core::ptr::with_exposed_provenance::<i16>(
-                    #imm.wrapping_add(core.get(#rs1)) as usize);
+                    #imm.wrapping_add((*core).get(#rs1)) as usize);
                 let val = core::ptr::read(addr);
-                core.set(#rd, val as i64 as u64);
+                (*core).set(#rd, val as i64 as u64);
             }))
         }
         "lbu" => {
@@ -427,9 +427,9 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(InstrToken::Infallible(quote! {
                 let addr = core::ptr::with_exposed_provenance::<u8>(
-                    #imm.wrapping_add(core.get(#rs1)) as usize);
+                    #imm.wrapping_add((*core).get(#rs1)) as usize);
                 let val = core::ptr::read(addr);
-                core.set(#rd, val as u64);
+                (*core).set(#rd, val as u64);
             }))
         }
         "lb" => {
@@ -438,9 +438,9 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(InstrToken::Infallible(quote! {
                 let addr = core::ptr::with_exposed_provenance::<i8>(
-                    #imm.wrapping_add(core.get(#rs1)) as usize);
+                    #imm.wrapping_add((*core).get(#rs1)) as usize);
                 let val = core::ptr::read(addr);
-                core.set(#rd, val as i64 as u64);
+                (*core).set(#rd, val as i64 as u64);
             }))
         }
         "sd" => {
@@ -448,10 +448,10 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let rs2 = Riscv::emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(InstrToken::Infallible(quote! {
-                let val = core.get(#rs2);
+                let val = (*core).get(#rs2);
                 let addr = core::ptr::with_exposed_provenance_mut::<u64>(
-                    #imm.wrapping_add(core.get(#rs1)) as usize);
-                let addr = (#imm.wrapping_add(core.get(#rs1))) as usize as *mut u64;
+                    #imm.wrapping_add((*core).get(#rs1)) as usize);
+                let addr = (#imm.wrapping_add((*core).get(#rs1))) as usize as *mut u64;
                 core::ptr::write(addr, val as u64);
             }))
         }
@@ -460,9 +460,9 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let rs2 = Riscv::emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(InstrToken::Infallible(quote! {
-                let val = core.get(#rs2);
+                let val = (*core).get(#rs2);
                 let addr = core::ptr::with_exposed_provenance_mut::<u32>(
-                    #imm.wrapping_add(core.get(#rs1)) as usize);
+                    #imm.wrapping_add((*core).get(#rs1)) as usize);
                 core::ptr::write(addr, val as u32);
             }))
         }
@@ -471,9 +471,9 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let rs2 = Riscv::emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(InstrToken::Infallible(quote! {
-                let val = core.get(#rs2);
+                let val = (*core).get(#rs2);
                 let addr = core::ptr::with_exposed_provenance_mut::<u16>(
-                    #imm.wrapping_add(core.get(#rs1)) as usize);
+                    #imm.wrapping_add((*core).get(#rs1)) as usize);
                 core::ptr::write(addr, val as u16);
             }))
         }
@@ -482,9 +482,9 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let rs2 = Riscv::emit_reg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(InstrToken::Infallible(quote! {
-                let val = core.get(#rs2);
+                let val = (*core).get(#rs2);
                 let addr = core::ptr::with_exposed_provenance_mut::<u8>(
-                    #imm.wrapping_add(core.get(#rs1)) as usize);
+                    #imm.wrapping_add((*core).get(#rs1)) as usize);
                 core::ptr::write(addr, val as u8);
             }))
         }
@@ -539,37 +539,37 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let rs1 = Riscv::emit_reg(&ops[0]);
             let rd = Riscv::emit_reg("x0");
             Ok(InstrToken::MayTrap(
-                quote! { core.execute(ast::JALR((bv(0), #rs1, #rd))) },
+                quote! { (*core).execute(ast::JALR((bv(0), #rs1, #rd))) },
             ))
         }
 
         // System
         "mret" => {
             check_nb_op(instr, 0)?;
-            Ok(InstrToken::MayTrap(quote! { core.execute(ast::MRET(())) }))
+            Ok(InstrToken::MayTrap(quote! { (*core).execute(ast::MRET(())) }))
         }
         "sret" => {
             check_nb_op(instr, 0)?;
-            Ok(InstrToken::MayTrap(quote! { core.execute(ast::SRET(())) }))
+            Ok(InstrToken::MayTrap(quote! { (*core).execute(ast::SRET(())) }))
         }
         "ecall" => {
             check_nb_op(instr, 0)?;
-            Ok(InstrToken::MayTrap(quote! { core.execute(ast::ECALL(())) }))
+            Ok(InstrToken::MayTrap(quote! { (*core).execute(ast::ECALL(())) }))
         }
         "ebreak" => {
             check_nb_op(instr, 0)?;
             Ok(InstrToken::MayTrap(
-                quote! { core.execute(ast::EBREAK(())) },
+                quote! { (*core).execute(ast::EBREAK(())) },
             ))
         }
         "wfi" => {
             check_nb_op(instr, 0)?;
-            Ok(InstrToken::MayTrap(quote! { core.execute(ast::WFI(())) }))
+            Ok(InstrToken::MayTrap(quote! { (*core).execute(ast::WFI(())) }))
         }
         "fence.i" => {
             check_nb_op(instr, 0)?;
             Ok(InstrToken::MayTrap(
-                quote! { core.execute(ast::FENCEI(())) },
+                quote! { (*core).execute(ast::FENCEI(())) },
             ))
         }
         "sfence.vma" => {
@@ -583,7 +583,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
                 (Riscv::emit_reg(&ops[0]), Riscv::emit_reg(&ops[1]))
             };
             Ok(InstrToken::MayTrap(
-                quote! { core.execute(ast::SFENCE_VMA((#vaddr, #asid))) },
+                quote! { (*core).execute(ast::SFENCE_VMA((#vaddr, #asid))) },
             ))
         }
         "hfence.gvma" => {

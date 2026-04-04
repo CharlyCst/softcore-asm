@@ -206,7 +206,7 @@ fn generate_softcore_code<A: Arch>(prog: StructuredProgram<A>) -> proc_macro2::T
         if let Some(expr) = &reg_alloc.input_expr {
             let reg = A::emit_reg(&reg_alloc.register);
             setup_code.push(quote! {
-                core.set(#reg, #expr as u64);
+                (*core).set(#reg, #expr as u64);
             });
         }
     }
@@ -230,7 +230,7 @@ fn generate_softcore_code<A: Arch>(prog: StructuredProgram<A>) -> proc_macro2::T
     let prologue = if setup_code.is_empty() {
         quote! {}
     } else {
-        wrap_infallible_code(quote! { #(#setup_code)* }, &prog.ctx)
+        quote! { #(#setup_code)* }
     };
     let epilogue = if output_registers.is_empty() {
         quote! {}
@@ -252,31 +252,20 @@ fn generate_softcore_code<A: Arch>(prog: StructuredProgram<A>) -> proc_macro2::T
     }
 }
 
-/// Wrap infallible code within a softcore context.
-fn wrap_infallible_code<A: Arch>(
-    instruction_code: proc_macro2::TokenStream,
-    ctx: &Context<A>,
-) -> proc_macro2::TokenStream {
-    let softcore = &ctx.softcore;
-    quote! {
-        #softcore(|core| {
-            #instruction_code;
-        });
-    }
-}
-
 /// Wrap fallible code within a softcore context.
 fn wrap_fallible_code<A: Arch>(
     instruction_code: proc_macro2::TokenStream,
     ctx: &Context<A>,
 ) -> proc_macro2::TokenStream {
-    let softcore = &ctx.softcore;
     let trap_handlers = &ctx.trap_handlers;
+    let softcore_module = ctx.softcore.clone();
     quote! {
-        match #softcore(|core| {
-            #instruction_code
-        }) {
-            Trap::Some(addr) => handle_trap(addr, &[#(#trap_handlers),*]),
+        match { #instruction_code } {
+            Trap::Some(addr) => {
+                handle_trap(addr, &[#(#trap_handlers),*]);
+                // We need to retrive the pointer again to ensure there is no live references
+                core = #softcore_module::_get_softcore_ptr();
+            },
             Trap::None => (),
         };
     }
@@ -285,26 +274,17 @@ fn wrap_fallible_code<A: Arch>(
 /// Extract registers (as a tuple) from the software core.
 fn extract_registers<A: Arch>(
     output_registers: &[&str],
-    ctx: &Context<A>,
+    _ctx: &Context<A>,
 ) -> proc_macro2::TokenStream {
-    // Get the softcore accessor
-    let softcore = &ctx.softcore;
-
     let mut regs = Vec::with_capacity(output_registers.len());
     for r in output_registers {
         let r = A::emit_reg(r);
-        regs.push(quote! { core.get(#r) as _ });
+        regs.push(quote! { (*core).get(#r) as _ });
     }
-    let returned_regs = if regs.is_empty() {
-        quote! {}
+    if regs.is_empty() {
+        quote! {()}
     } else {
         quote! { (#(#regs,)*) }
-    };
-
-    quote! {
-        #softcore(|core| {
-            #returned_regs
-        });
     }
 }
 
@@ -315,7 +295,7 @@ fn generate_structured_code<A: Arch>(shape: &Shape, ctx: &Context<A>) -> proc_ma
             for instr in instrs {
                 let tokens = match riscv::emit_softcore_instr(instr, ctx) {
                     Ok(InstrToken::MayTrap(tokens)) => wrap_fallible_code(tokens, ctx),
-                    Ok(InstrToken::Infallible(tokens)) => wrap_infallible_code(tokens, ctx),
+                    Ok(InstrToken::Infallible(tokens)) => tokens,
                     Err(err) => err.to_compile_error(),
                 };
                 code.extend(tokens);
@@ -362,11 +342,6 @@ fn generate_structured_code<A: Arch>(shape: &Shape, ctx: &Context<A>) -> proc_ma
             // Get the code to set the return values in the registers
             let (fn_call, reg_update) =
                 A::update_register_from_fn_call(abi, call.return_type, fn_call_tokens);
-            let reg_update = if reg_update.is_empty() {
-                quote! {}
-            } else {
-                wrap_infallible_code(reg_update, ctx)
-            };
 
             // Create a block to extract the arguments, and the next block to execute
             let extract_args_block = extract_registers(A::abi_registers(abi, call.num_args), ctx);
@@ -376,12 +351,17 @@ fn generate_structured_code<A: Arch>(shape: &Shape, ctx: &Context<A>) -> proc_ma
                 None => true,
             };
 
-            // Supress unreachable warning of code come after the function call.
+            // Suppress unreachable warning of code come after the function call.
             // This is required because the function can have a `!` return type.
+            // If there is more code we also need to get a fresh pointer to the core as the function
+            // might have created aliases to the core.
+            let softcore_module = ctx.softcore.clone();
             let allow_unreachable = if reg_update.is_empty() && next_is_empty {
                 quote! {}
             } else {
-                quote! { #[allow(unreachable_code)] }
+                quote! {
+                    core = #softcore_module::_get_softcore_ptr();
+                }
             };
 
             quote! {
@@ -465,6 +445,7 @@ pub fn asm(input: TokenStream) -> TokenStream {
         }
     };
 
+    let softcore_module = assembly.ctx.softcore.clone();
     let softcore_code = generate_softcore_code(assembly);
     quote! {
         {
@@ -473,8 +454,14 @@ pub fn asm(input: TokenStream) -> TokenStream {
                 Core, Trap, ast, prelude::bv, registers as reg,
                 raw::{iop, rop, sop, csrop, csr_name_map_backwards, self},
             };
+            #[allow(unused_imports)]
             use ::softcore_asm_rv64::{FromRegister, handle_trap};
-            #softcore_code
+            unsafe {
+                #![allow(unused_assignment, unused_variables, unused)]
+                #![allow(unreachable_code)]
+                let mut core = #softcore_module::_get_softcore_ptr();
+                #softcore_code
+            }
         }
     }
     .into()

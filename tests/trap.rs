@@ -1,39 +1,14 @@
-use core::cell::RefCell;
-use std::thread_local;
+use softcore_asm_rv64::softcore_init;
+use softcore_rv64::{Core, new_core};
 
-use softcore_rv64::{Core, config, new_core};
-
-// Each thread gets its own copy of the core, this prevent tests using different threads inside a
-// same process to share the same core.
-thread_local! {
-    /// A software RISC-V core that emulates a real CPU.
-    ///
-    /// We use one core per thread to prevent interference among threads, such as when running
-    /// `cargo test`. Therefore, the core lives in threat local storage and must be access using
-    /// the `thread_loca!` API.
-    ///
-    /// Usage:
-    ///
-    /// ```
-    /// SOFT_CORE.with_borrow_mut(|core| {
-    ///     // The `core` can be accessed within the closure
-    ///     core.set(reg::X1, 0x42);
-    ///     core.csrrw(reg::X0, csr::MSCRATCH, reg::X1).unwrap();
-    /// });
-    /// ```
-    pub static SOFT_CORE: RefCell<Core> = {
-        let mut core = new_core(config::U74);
-        core.reset();
-        RefCell::new(core)
-    };
-}
+softcore_init!(softcore_rv64::config::U74);
 
 /// A macro that wraps the softcore asm macro to add the softcore parameter automatically.
 macro_rules! rasm {
     ($($asm:tt)*) => {
         softcore_asm_rv64::asm!(
             $($asm)*,
-            softcore(SOFT_CORE.with_borrow_mut),
+            softcore(self),
             softcore_trap_handlers(_tracing_trap_handler),
         )
     };
@@ -45,7 +20,7 @@ macro_rules! naked_rasm {
         extern "C" fn $name() {
             softcore_asm_rv64::asm!(
                 $($asm)*,
-                softcore(SOFT_CORE.with_borrow_mut)
+                softcore(self)
             );
         }
     };
