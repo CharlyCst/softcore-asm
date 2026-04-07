@@ -62,6 +62,23 @@ macro_rules! mul {
     }};
 }
 
+/// Emit the tokens for VVTYPE type instructions
+macro_rules! vvtype {
+    ($instr: ident, $op:path) => {{
+        check_nb_op($instr, 3)?;
+
+        let vs2 = emit_vreg(&$instr.operands[1]);
+        let vs1 = emit_vreg(&$instr.operands[2]);
+        let vd = emit_vreg(&$instr.operands[0]);
+        /* TODO: For now we don't support masking */
+
+        /* TODO(Gurvan): For some reason just using vvfunct6 here does not work? */
+        Ok(InstrToken::MayTrap(quote! {
+            core.execute(ast::VVTYPE((softcore_rv64::raw::vvfunct6::$op, bv(1, 1), #vs2, #vs1, #vd)))
+        }))
+    }};
+}
+
 // ————————————————————————— Instruction to Tokens —————————————————————————— //
 
 pub struct Riscv {}
@@ -604,71 +621,132 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let lmul = emit_lmul(&ops[3]);
             let vta = emit_tail_policy(&ops[4]);
             let vma = emit_mask_policy(&ops[5]);
-            Ok(InstrToken::MayTrap(
-                quote! {
-                    core.execute(ast::VSETVLI((
-                        bv(1, #vma),
-                        bv(1, #vta),
-                        bv(3, #sew),
-                        bv(3, #lmul),
-                        #rs1,
-                        #rd
-                    )))
-                },
-            ))
+            Ok(InstrToken::MayTrap(quote! {
+                core.execute(ast::VSETVLI((
+                    bv(1, #vma),
+                    bv(1, #vta),
+                    bv(3, #sew),
+                    bv(3, #lmul),
+                    #rs1,
+                    #rd
+                )))
+            }))
         }
+        // V Extension: Arithmetic
+        "vadd.vv" => {
+            vvtype!(instr, VV_VADD)
+        }
+        "vsub.vv" => {
+            vvtype!(instr, VV_VSUB)
+        }
+        "vminu.vv" => {
+            vvtype!(instr, VV_VMINU)
+        }
+        "vmin.vv" => {
+            vvtype!(instr, VV_VMIN)
+        }
+        "vmaxu.vv" => {
+            vvtype!(instr, VV_VMAXU)
+        }
+        "vmax.vv" => {
+            vvtype!(instr, VV_VMAX)
+        }
+        "vand.vv" => {
+            vvtype!(instr, VV_VAND)
+        }
+        "vor.vv" => {
+            vvtype!(instr, VV_VOR)
+        }
+        "vxor.vv" => {
+            vvtype!(instr, VV_VXOR)
+        }
+        "vrgather.vv" => {
+            vvtype!(instr, VV_VRGATHER)
+        }
+        "vrgatherei16.vv" => {
+            vvtype!(instr, VV_VRGATHEREI16)
+        }
+        "vsaddu.vv" => {
+            vvtype!(instr, VV_VSADDU)
+        }
+        "vsadd.vv" => {
+            vvtype!(instr, VV_VSADD)
+        }
+        "vssubu.vv" => {
+            vvtype!(instr, VV_VSSUBU)
+        }
+        "vssub.vv" => {
+            vvtype!(instr, VV_VSSUB)
+        }
+        "vsll.vv" => {
+            vvtype!(instr, VV_VSLL)
+        }
+        "vsmul.vv" => {
+            vvtype!(instr, VV_VSMUL)
+        }
+        "vsrl.vv" => {
+            vvtype!(instr, VV_VSRL)
+        }
+        "vsra.vv" => {
+            vvtype!(instr, VV_VSRA)
+        }
+        "vssrl.vv" => {
+            vvtype!(instr, VV_VSSRL)
+        }
+        "vssra.vv" => {
+            vvtype!(instr, VV_VSSRA)
+        }
+        // V Extension: Memory
         "vle8.v" => {
             check_nb_op(instr, 2)?;
+            /* TODO(Gurvan): For now, we don't support masking */
             let vd = emit_vreg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
-            // TODO(Gurvan): Transform into a macro to support vle8.v and other
-            // TODO: Vector store and load has to be implemented manually it seems since the model
-            // as no idea that memory exists
-            // - We have to query the core to know about the vtype, most importantly the grouping
-            // features
-            // - We then need to know the total size of the BitVector we are going to read
-            // - We then ...
-            Ok(InstrToken::MayTrap(
-                quote! {
-                    core.execute(ast::VLSEGTYPE((
-                        bv(3, 0), // No stride
-                        bv(1, 0), // TODO(Gurvan): For now we don't support mask
-                        #rs1,
-                        vlewidth::VLE8,
-                        #vd,
-                    )))
-                },
-            ))
+            Ok(InstrToken::Infallible(quote! {
+                    let base_addr = #imm.wrapping_add(core.get(#rs1)) as usize;
+                    let vl = core.vl.unsigned() as usize;
+                    let mut elements = Vec::with_capacity(vl);
 
+                    for i in 0..vl {
+                        /* TODO(Gurvan): If this fail, we should set vstart */
+                        /* TODO(Gurvan): Making this code more generic could be better? */
+                        let addr = core::ptr::with_exposed_provenance::<u8>(base_addr + i);
+                        let val = core::ptr::read(addr);
+
+                        /* TODO(Gurvan): Should the bitvector size here be the size of a vector register? */
+                        elements.push(bv(8, val as u64));
+                    }
+
+                    core.set_vec(#vd, elements);
+            }))
         }
         "vmv.v.x" => {
             check_nb_op(instr, 2)?;
             let vd = emit_vreg(&ops[0]);
             let rs1 = Riscv::emit_reg(&ops[1]);
-            Ok(InstrToken::MayTrap(
-                quote! {
-                    core.execute(ast::MOVETYPEX((
-                        #rs1,
-                        #vd
-                    )))
-                },
-            ))
+            Ok(InstrToken::MayTrap(quote! {
+                core.execute(ast::MOVETYPEX((
+                    #rs1,
+                    #vd
+                )))
+            }))
         }
         "vse8.v" => {
             check_nb_op(instr, 2)?;
-            /* TODO: For now, we don't support masking */
+            /* TODO(Gurvan): For now, we don't support masking */
             let vs3 = emit_vreg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(InstrToken::Infallible(quote! {
-                    let base_addr = #imm.wrapping_add(core.get(#rs1)) as usize;
-                    let elements = core.get_vec(#vs3);
-                    for (i, bv) in elements.into_iter().enumerate() {
-                        /* TODO: If this fail, we should set vstart */
-                        let addr = core::ptr::with_exposed_provenance_mut::<u8>(base_addr + i);
-                        let val = bv.to_raw_le()[0]; /* We only care about the first byte for vse8 */
-                        core::ptr::write(addr, val);
-                    }
-                }))
+                let base_addr = #imm.wrapping_add(core.get(#rs1)) as usize;
+                let elements = core.get_vec(#vs3);
+                for (i, bv) in elements.into_iter().enumerate() {
+                    /* TODO(Gurvan): If this fail, we should set vstart */
+                    /* TODO(Gurvan): Making this code more generic could be better? */
+                    let addr = core::ptr::with_exposed_provenance_mut::<u8>(base_addr + i);
+                    let val = bv.to_raw_le()[0];
+                    core::ptr::write(addr, val);
+                }
+            }))
         }
 
         // Unknown instructions
@@ -812,16 +890,16 @@ fn emit_constant(cst: &str, consts: &HashMap<String, Expr>) -> TokenStream {
 
 fn emit_vreg(reg: &str) -> TokenStream {
     match reg {
-        "v0"  => quote! { reg::V0 },
-        "v1"  => quote! { reg::V1 },
-        "v2"  => quote! { reg::V2 },
-        "v3"  => quote! { reg::V3 },
-        "v4"  => quote! { reg::V4 },
-        "v5"  => quote! { reg::V5 },
-        "v6"  => quote! { reg::V6 },
-        "v7"  => quote! { reg::V7 },
-        "v8"  => quote! { reg::V8 },
-        "v9"  => quote! { reg::V9 },
+        "v0" => quote! { reg::V0 },
+        "v1" => quote! { reg::V1 },
+        "v2" => quote! { reg::V2 },
+        "v3" => quote! { reg::V3 },
+        "v4" => quote! { reg::V4 },
+        "v5" => quote! { reg::V5 },
+        "v6" => quote! { reg::V6 },
+        "v7" => quote! { reg::V7 },
+        "v8" => quote! { reg::V8 },
+        "v9" => quote! { reg::V9 },
         "v10" => quote! { reg::V10 },
         "v11" => quote! { reg::V11 },
         "v12" => quote! { reg::V12 },
@@ -844,116 +922,112 @@ fn emit_vreg(reg: &str) -> TokenStream {
         "v29" => quote! { reg::V29 },
         "v30" => quote! { reg::V30 },
         "v31" => quote! { reg::V31 },
-        _ => {
-            Error::new(
-                Span::call_site(),
-                format!("Unknown vector register: {reg}")
-            ).to_compile_error()
-        }
+        _ => Error::new(Span::call_site(), format!("Unknown vector register: {reg}"))
+            .to_compile_error(),
     }
 }
 
 fn emit_sew(n: &str) -> TokenStream {
     match n {
-        "e8"   => {
+        "e8" => {
             let v = 0 as u64;
             quote! { #v }
-        },
-        "e16"  => {
+        }
+        "e16" => {
             let v = 1 as u64;
             quote! { #v }
-        },
-        "e32"  =>  {
+        }
+        "e32" => {
             let v = 2 as u64;
             quote! { #v }
-        },
-        "e64"  => {
+        }
+        "e64" => {
             let v = 3 as u64;
             quote! { #v }
-        },
+        }
         "e128" => {
             let v = 4 as u64;
             quote! { #v }
-        },
-        _ =>
-            Error::new(
-                Span::call_site(),
-                format!("Could not find a sew named '{n}'"),
-            ) .to_compile_error(),
+        }
+        _ => Error::new(
+            Span::call_site(),
+            format!("Could not find a sew named '{n}'"),
+        )
+        .to_compile_error(),
     }
 }
 
 fn emit_lmul(n: &str) -> TokenStream {
     match n {
-        "m1"   => {
+        "m1" => {
             let v = 0 as u64;
             quote! { #v }
-        },
-        "m2"  => {
+        }
+        "m2" => {
             let v = 1 as u64;
             quote! { #v }
-        },
-        "m4"  =>  {
+        }
+        "m4" => {
             let v = 2 as u64;
             quote! { #v }
-        },
-        "m8"  => {
+        }
+        "m8" => {
             let v = 3 as u64;
             quote! { #v }
-        },
+        }
         "mf8" => {
             let v = 5 as u64;
             quote! { #v }
-        },
+        }
         "mf4" => {
             let v = 6 as u64;
             quote! { #v }
-        },
+        }
         "mf2" => {
             let v = 7 as u64;
             quote! { #v }
-        },
-        _ =>
-            Error::new(
-                Span::call_site(),
-                format!("Could not find a lmul named '{n}'"),
-            ) .to_compile_error(),
+        }
+        _ => Error::new(
+            Span::call_site(),
+            format!("Could not find a lmul named '{n}'"),
+        )
+        .to_compile_error(),
     }
 }
 
 fn emit_tail_policy(n: &str) -> TokenStream {
     match n {
-        "tu"   => {
+        "tu" => {
             let v = 0 as u64;
             quote! { #v }
-        },
-        "ta"  => {
+        }
+        "ta" => {
             let v = 1 as u64;
             quote! { #v }
-        },
-        _ =>
-            Error::new(
-                Span::call_site(),
-                format!("Could not find a tail policy named '{n}'"),
-            ) .to_compile_error(),
+        }
+        _ => Error::new(
+            Span::call_site(),
+            format!("Could not find a tail policy named '{n}'"),
+        )
+        .to_compile_error(),
     }
 }
 
 fn emit_mask_policy(n: &str) -> TokenStream {
     match n {
-        "mu"   => {
+        "mu" => {
             let v = 0 as u64;
             quote! { #v }
-        },
-        "ma"  => {
+        }
+        "ma" => {
             let v = 1 as u64;
             quote! { #v }
-        },
-        _ =>
-            Error::new(
-                Span::call_site(),
-                format!("Could not find a tail policy named '{n}'"),
-            ) .to_compile_error(),
+        }
+        _ => Error::new(
+            Span::call_site(),
+            format!("Could not find a tail policy named '{n}'"),
+        )
+        .to_compile_error(),
     }
 }
 

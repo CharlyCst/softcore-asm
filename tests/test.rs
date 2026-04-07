@@ -5,7 +5,8 @@ use std::thread_local;
 use softcore_rv64::prelude::bv;
 use softcore_rv64::registers as reg;
 use softcore_rv64::{Core, config, new_core};
-use softcore_rv64::raw::vlewidth;
+
+const CONFIG: softcore_rv64::raw::Config = config::VECTOR_TEST;
 
 // Each thread gets its own copy of the core, this prevent tests using different threads inside a
 // same process to share the same core.
@@ -26,7 +27,7 @@ thread_local! {
     /// });
     /// ```
     pub static SOFT_CORE: RefCell<Core> = {
-        let mut core = new_core(config::VECTOR_TEST);
+        let mut core = new_core(CONFIG);
         core.reset();
         RefCell::new(core)
     };
@@ -1053,7 +1054,13 @@ fn shift_immediate() {
 #[test]
 fn vector_config() {
     let requested_vl: u64 = 8;
-    let expected_vl: u64 = 1;
+    // TODO: Compute this from the config instead of hard-coding it
+    let expected_vl: u64 = 4;
+    // let number_of_used_register = 1;
+    // let asked_size: u64 = number_of_used_register // Number of used register (m1)
+    //                     * requested_vl
+    //                     * 8;// Number of bits in each used register
+    // let available_size: i128 = i128::pow(2, CONFIG.extensions.V.vlen_exp as u32) * number_of_used_register as i128;
     let actual_vl: u64;
     let vtype_val: usize;
 
@@ -1066,7 +1073,7 @@ fn vector_config() {
     // We CANNOT exceed a BitVector size of 64 for now without trapping
 
     rasm!(
-        "vsetvli {vl_out}, {rs1}, e8, m1, ta, ma",
+        "vsetvli {vl_out}, {rs1}, e8, m4, ta, ma",
         "csrr {vtype_out}, vtype",
         rs1 = in(reg) requested_vl,
         vl_out = out(reg) actual_vl,
@@ -1083,19 +1090,27 @@ fn vector_config() {
 
     let sew_mask = 0b111 << 3;
     let actual_sew = (vtype_val & sew_mask) >> 3;
-    assert_eq!(actual_sew, 0, "SEW mismatch: Expected 'e8' (0), got {}", actual_sew);
+    assert_eq!(
+        actual_sew, 0,
+        "SEW mismatch: Expected 'e8' (0), got {}",
+        actual_sew
+    );
 
     let lmul_mask = 0b111;
     let actual_lmul = vtype_val & lmul_mask;
-    assert_eq!(actual_lmul, 0, "LMUL mismatch: Expected 'm1' (0), got {}", actual_lmul);
+    assert_eq!(
+        actual_lmul, 2,
+        "LMUL mismatch: Expected 'm4' (2), got {}",
+        actual_lmul
+    );
 
-    let vta_bit  = 1 << 6;
+    let vta_bit = 1 << 6;
     assert!(
         (vtype_val & vta_bit) != 0,
         "Tail policy mismatch: Expected 'ta' to be set"
     );
 
-    let vma_bit  = 1 << 7;
+    let vma_bit = 1 << 7;
     assert!(
         (vtype_val & vma_bit) != 0,
         "Mask policy mismatch: Expected 'ma' to be set"
@@ -1111,42 +1126,38 @@ fn vector_config() {
     });
 }
 
-// TODO: Need support for vle8.v, which we currently don't have
-// #[test]
-// fn vector_memory_mempcy() {
-//     unsafe {
-//         let mut mem_buffer = [0u8; 8];
-//         let input_data: [u8; 8] = [0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE];
-//         let addr = mem_buffer.as_mut_ptr() as usize;
-//
-//         let input_ptr = input_data.as_ptr() as usize;
-//         let actual_vl: u64;
-//
-//         rasm!(
-//             "vsetvli {vl}, {rs1}, e8, m1, ta, ma",
-//             "vle8.v v8, ({in_ptr})",
-//             "vse8.v v8, ({out_ptr})",
-//
-//             rs1 = in(reg) 8,
-//             vl = out(reg) actual_vl,
-//             in_ptr = in(reg) input_ptr,
-//             out_ptr = in(reg) addr,
-//         );
-//
-//         assert!(actual_vl >= 8, "VL was {}, but we needed at least 8 for this test", actual_vl);
-//         assert_eq!(mem_buffer, input_data, "vse8.v failed to store the correct bytes to memory");
-//     }
-// }
+#[test]
+fn vector_memory_mempcy() {
+    unsafe {
+        let mut output = [0u8; 8];
+        let input: [u8; 8] = [0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE];
+        let vl: usize;
+
+        rasm!(
+            "vsetvli {vl}, {rs1}, e8, m1, ta, ma",
+            "vle8.v v8, ({in_ptr})",
+            "vse8.v v8, ({out_ptr})",
+
+            rs1 = in(reg) 8,
+            vl = out(reg) vl,
+            in_ptr = in(reg) input.as_ptr(),
+            out_ptr = in(reg) output.as_mut_ptr(),
+        );
+
+        for i in 0..vl {
+            assert_eq!(output[i], input[i]);
+        }
+    }
+}
 
 #[test]
 fn vector_memory_memset() {
+    const MEM_BUFFER_SIZE: usize = 8;
+    let mut mem_buffer = [0u8; MEM_BUFFER_SIZE];
+    let addr = mem_buffer.as_mut_ptr() as usize;
+    let val_to_store: u64 = 0xAB;
+    let actual_vl: u64;
     unsafe {
-        const MEM_BUFFER_SIZE: usize = 8;
-        let mut mem_buffer = [0u8; MEM_BUFFER_SIZE];
-        let addr = mem_buffer.as_mut_ptr() as usize;
-        let val_to_store: u64 = 0xAB;
-        let actual_vl: u64;
-
         rasm!(
             "vsetvli {vl}, {rs1}, e8, m1, ta, ma",
             "vmv.v.x v8, {scalar_val}",
@@ -1157,25 +1168,191 @@ fn vector_memory_memset() {
             scalar_val = in(reg) val_to_store,
             out_ptr = in(reg) addr,
         );
-
-        for i in 0..MEM_BUFFER_SIZE {
-            if (i as u64) < actual_vl {
-                assert_eq!(
-                    mem_buffer[i], 0xAB,
-                    "Index {} should have been stored as 0xAB", i
-                );
-            } else {
-                assert_eq!(
-                    mem_buffer[i], 0x00,
-                    "Index {} is beyond VL ({}) and should be untouched (0x00)", i, actual_vl
-                );
-            }
-        }
-
-        SOFT_CORE.with_borrow_mut(|core| {
-            assert_eq!(core.vl.bits(), actual_vl);
-        });
     }
+
+    for i in 0..MEM_BUFFER_SIZE {
+        if (i as u64) < actual_vl {
+            assert_eq!(
+                mem_buffer[i], 0xAB,
+                "Index {} should have been stored as 0xAB",
+                i
+            );
+        } else {
+            assert_eq!(
+                mem_buffer[i], 0x00,
+                "Index {} is beyond VL ({}) and should be untouched (0x00)",
+                i, actual_vl
+            );
+        }
+    }
+
+    SOFT_CORE.with_borrow_mut(|core| {
+        assert_eq!(core.vl.bits(), actual_vl);
+    });
 }
 
-// TODO(Gurvan): Write vector arithmetic test
+#[test]
+fn vector_vvtype() {
+    const ARRAY_SIZE: usize = 4;
+    let input_a: [u8; ARRAY_SIZE] = [1, 2, 3, 4];
+    let input_b: [u8; ARRAY_SIZE] = [1, 2, 3, 4];
+    let mut output = [0u8; ARRAY_SIZE];
+    let mut number_of_processed_element: usize;
+
+    // TODO(Gurvan): Should we be able to use `out` uninitialized?
+
+    // "vadd.vv"
+    unsafe {
+        rasm!(
+            "vsetvli {vl}, {len}, e8, m1, ta, ma",
+            "vle8.v v1, ({ptr_a})",
+            "vle8.v v2, ({ptr_b})",
+            "vadd.vv v3, v1, v2",
+            "vse8.v v3, ({ptr_out})",
+
+            vl = out(reg) number_of_processed_element,
+            len = in(reg) ARRAY_SIZE,
+            ptr_a = in(reg) input_a.as_ptr(),
+            ptr_b = in(reg) input_b.as_ptr(),
+            ptr_out = in(reg) output.as_mut_ptr(),
+        );
+    }
+
+    for i in 0..number_of_processed_element {
+        assert_eq!(output[i], input_a[i] + input_b[i]);
+    }
+
+    // "vsub.vv"
+    // unsafe {
+    //     rasm!(
+    //         "vsetvli {vl}, {len}, e8, m1, ta, ma",
+    //         "vle8.v v1, ({ptr_a})",
+    //         "vle8.v v2, ({ptr_b})",
+    //         "vsub.vv v3, v1, v2",
+    //         "vse8.v v3, ({ptr_out})",
+    //
+    //         vl = out(reg) number_of_processed_element,
+    //         len = in(reg) ARRAY_SIZE,
+    //         ptr_a = in(reg) input_a.as_ptr(),
+    //         ptr_b = in(reg) input_b.as_ptr(),
+    //         ptr_out = in(reg) output.as_mut_ptr(),
+    //     );
+    // }
+    //
+    // for i in 0..number_of_processed_element {
+    //     assert_eq!(output[i], input_a[i] - input_b[i]);
+    // }
+
+    // "vminu.vv"
+    unsafe {
+        rasm!(
+            "vsetvli {vl}, {len}, e8, m1, ta, ma",
+            "vle8.v v1, ({ptr_a})",
+            "vle8.v v2, ({ptr_b})",
+            "vminu.vv v3, v1, v2",
+            "vse8.v v3, ({ptr_out})",
+
+            vl = out(reg) number_of_processed_element,
+            len = in(reg) ARRAY_SIZE,
+            ptr_a = in(reg) input_a.as_ptr(),
+            ptr_b = in(reg) input_b.as_ptr(),
+            ptr_out = in(reg) output.as_mut_ptr(),
+        );
+    }
+
+    for i in 0..number_of_processed_element {
+        assert_eq!(output[i], input_a[i].min(input_b[i]));
+    }
+
+    // TODO: "vmin.vv"
+
+    // "vmaxu.vv"
+    unsafe {
+        rasm!(
+            "vsetvli {vl}, {len}, e8, m1, ta, ma",
+            "vle8.v v1, ({ptr_a})",
+            "vle8.v v2, ({ptr_b})",
+            "vmaxu.vv v3, v1, v2",
+            "vse8.v v3, ({ptr_out})",
+
+            vl = out(reg) number_of_processed_element,
+            len = in(reg) ARRAY_SIZE,
+            ptr_a = in(reg) input_a.as_ptr(),
+            ptr_b = in(reg) input_b.as_ptr(),
+            ptr_out = in(reg) output.as_mut_ptr(),
+        );
+    }
+
+    for i in 0..number_of_processed_element {
+        assert_eq!(output[i], input_a[i].max(input_b[i]));
+    }
+
+    // TODO: "vmax.vv"
+
+    // "vand.vv"
+    unsafe {
+        rasm!(
+            "vsetvli {vl}, {len}, e8, m1, ta, ma",
+            "vle8.v v1, ({ptr_a})",
+            "vle8.v v2, ({ptr_b})",
+            "vand.vv v3, v1, v2",
+            "vse8.v v3, ({ptr_out})",
+
+            vl = out(reg) number_of_processed_element,
+            len = in(reg) ARRAY_SIZE,
+            ptr_a = in(reg) input_a.as_ptr(),
+            ptr_b = in(reg) input_b.as_ptr(),
+            ptr_out = in(reg) output.as_mut_ptr(),
+        );
+    }
+
+    for i in 0..number_of_processed_element {
+        assert_eq!(output[i], input_a[i] & input_b[i]);
+    }
+
+    // "vor.vv"
+    unsafe {
+        rasm!(
+            "vsetvli {vl}, {len}, e8, m1, ta, ma",
+            "vle8.v v1, ({ptr_a})",
+            "vle8.v v2, ({ptr_b})",
+            "vor.vv v3, v1, v2",
+            "vse8.v v3, ({ptr_out})",
+
+            vl = out(reg) number_of_processed_element,
+            len = in(reg) ARRAY_SIZE,
+            ptr_a = in(reg) input_a.as_ptr(),
+            ptr_b = in(reg) input_b.as_ptr(),
+            ptr_out = in(reg) output.as_mut_ptr(),
+        );
+    }
+
+    for i in 0..number_of_processed_element {
+        assert_eq!(output[i], input_a[i] | input_b[i]);
+    }
+
+    // "vxor.vv"
+    unsafe {
+        rasm!(
+            "vsetvli {vl}, {len}, e8, m1, ta, ma",
+            "vle8.v v1, ({ptr_a})",
+            "vle8.v v2, ({ptr_b})",
+            "vxor.vv v3, v1, v2",
+            "vse8.v v3, ({ptr_out})",
+
+            vl = out(reg) number_of_processed_element,
+            len = in(reg) ARRAY_SIZE,
+            ptr_a = in(reg) input_a.as_ptr(),
+            ptr_b = in(reg) input_b.as_ptr(),
+            ptr_out = in(reg) output.as_mut_ptr(),
+        );
+    }
+
+    for i in 0..number_of_processed_element {
+        assert_eq!(output[i], input_a[i] ^ input_b[i]);
+    }
+
+    // TODO: Test shifts
+
+    // TODO: Test saturating arithmetic
+}
