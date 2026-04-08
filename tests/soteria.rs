@@ -15,8 +15,9 @@
 //! On other platforms Soteria needs to be installed from source, see instruction [on
 //! github](https://github.com/soteria-tools/soteria).
 
-use softcore_rv64::{Core, new_core};
 use softcore_asm_rv64::softcore_init;
+use softcore_rv64::raw::AccessType;
+use softcore_rv64::{Core, new_core};
 
 softcore_init!(softcore_rv64::config::U74);
 
@@ -73,7 +74,7 @@ macro_rules! rasm {
     };
 }
 
-/// An assembly implementation of a branchless 
+/// An assembly implementation of a branchless
 fn branchless_i64_abs(x: i64) -> i64 {
     let mut result: u64 = 0;
     let mut _sign: u64 = 0;
@@ -100,4 +101,24 @@ fn test_branchless_abs() {
     } else {
         assert_eq!(x_abs, x);
     }
+}
+
+#[cfg_attr(kani, kani::proof)]
+#[cfg_attr(test, test)]
+fn config_pmp() {
+    rasm!(
+        "csrw pmpaddr0, {pmpaddr}",
+        "csrw pmpcfg0, {pmpcfg}",
+        pmpaddr = in(reg) 0x2000ffff,
+        pmpcfg  = in(reg) 0b10011000,
+    );
+
+    SOFT_CORE.with_borrow_mut(|core| {
+        let addr = any!(u64) & !0b1111;
+
+        if (0x80000000..0x80080000).contains(&addr) {
+            assert!(core.pmp_check(addr, AccessType::Write(())).is_some());
+        } else {
+            assert!(core.pmp_check(addr, AccessType::Write(())).is_none()); }
+    })
 }
