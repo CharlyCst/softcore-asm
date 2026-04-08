@@ -546,15 +546,21 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
         // System
         "mret" => {
             check_nb_op(instr, 0)?;
-            Ok(InstrToken::MayTrap(quote! { (*core).execute(ast::MRET(())) }))
+            Ok(InstrToken::MayTrap(
+                quote! { (*core).execute(ast::MRET(())) },
+            ))
         }
         "sret" => {
             check_nb_op(instr, 0)?;
-            Ok(InstrToken::MayTrap(quote! { (*core).execute(ast::SRET(())) }))
+            Ok(InstrToken::MayTrap(
+                quote! { (*core).execute(ast::SRET(())) },
+            ))
         }
         "ecall" => {
             check_nb_op(instr, 0)?;
-            Ok(InstrToken::MayTrap(quote! { (*core).execute(ast::ECALL(())) }))
+            Ok(InstrToken::MayTrap(
+                quote! { (*core).execute(ast::ECALL(())) },
+            ))
         }
         "ebreak" => {
             check_nb_op(instr, 0)?;
@@ -564,7 +570,9 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
         }
         "wfi" => {
             check_nb_op(instr, 0)?;
-            Ok(InstrToken::MayTrap(quote! { (*core).execute(ast::WFI(())) }))
+            Ok(InstrToken::MayTrap(
+                quote! { (*core).execute(ast::WFI(())) },
+            ))
         }
         "fence.i" => {
             check_nb_op(instr, 0)?;

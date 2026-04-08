@@ -119,6 +119,7 @@ fn config_pmp() {
         if (0x80000000..0x80080000).contains(&addr) {
             assert!(core.pmp_check(addr, AccessType::Write(())).is_some());
         } else {
-            assert!(core.pmp_check(addr, AccessType::Write(())).is_none()); }
+            assert!(core.pmp_check(addr, AccessType::Write(())).is_none());
+        }
     })
 }

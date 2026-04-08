@@ -1,9 +1,9 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use softcore_asm_rv64::softcore_init;
 use softcore_rv64::prelude::bv;
 use softcore_rv64::registers as reg;
 use softcore_rv64::{Core, new_core};
-use softcore_asm_rv64::softcore_init;
 
 softcore_init!(softcore_rv64::config::U74);
 

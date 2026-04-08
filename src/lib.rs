@@ -108,7 +108,7 @@ macro_rules! softcore_init {
         /// Returns a raw pointer to the thread local core.
         ///
         /// # Safety:
-        /// 
+        ///
         /// The pointer is obtained through `thread_local!`'s `with_borrow_mut` methods, and
         /// therefore should never escape the current thread, nor be derefferenced after another
         /// call to `with_borrow_mut`.
