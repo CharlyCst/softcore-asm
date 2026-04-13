@@ -342,6 +342,60 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
                 quote! { (*core).execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRC))) },
             ))
         }
+        "csrrwi" => {
+            check_nb_op(instr, 3)?;
+            let rd = Riscv::emit_reg(&ops[0]);
+            let csr = emit_csr(&ops[1]);
+            let uimm = emit_integer(&ops[2], consts);
+            Ok(InstrToken::MayTrap(
+                quote! { (*core).execute(ast::CSRImm((bv(#csr), bv(#uimm), #rd, csrop::CSRRW))) },
+            ))
+        }
+        "csrrsi" => {
+            check_nb_op(instr, 3)?;
+            let rd = Riscv::emit_reg(&ops[0]);
+            let csr = emit_csr(&ops[1]);
+            let uimm = emit_integer(&ops[2], consts);
+            Ok(InstrToken::MayTrap(
+                quote! { (*core).execute(ast::CSRImm((bv(#csr), bv(#uimm), #rd, csrop::CSRRS))) },
+            ))
+        }
+        "csrrci" => {
+            check_nb_op(instr, 3)?;
+            let rd = Riscv::emit_reg(&ops[0]);
+            let csr = emit_csr(&ops[1]);
+            let uimm = emit_integer(&ops[2], consts);
+            Ok(InstrToken::MayTrap(
+                quote! { (*core).execute(ast::CSRImm((bv(#csr), bv(#uimm), #rd, csrop::CSRRC))) },
+            ))
+        }
+        "csrwi" => {
+            check_nb_op(instr, 2)?;
+            let rd = Riscv::emit_reg("x0");
+            let csr = emit_csr(&ops[0]);
+            let uimm = emit_integer(&ops[1], consts);
+            Ok(InstrToken::MayTrap(
+                quote! { (*core).execute(ast::CSRImm((bv(#csr), bv(#uimm), #rd, csrop::CSRRW))) },
+            ))
+        }
+        "csrsi" => {
+            check_nb_op(instr, 2)?;
+            let rd = Riscv::emit_reg("x0");
+            let csr = emit_csr(&ops[0]);
+            let uimm = emit_integer(&ops[1], consts);
+            Ok(InstrToken::MayTrap(
+                quote! { (*core).execute(ast::CSRImm((bv(#csr), bv(#uimm), #rd, csrop::CSRRS))) },
+            ))
+        }
+        "csrci" => {
+            check_nb_op(instr, 2)?;
+            let rd = Riscv::emit_reg("x0");
+            let csr = emit_csr(&ops[0]);
+            let uimm = emit_integer(&ops[1], consts);
+            Ok(InstrToken::MayTrap(
+                quote! { (*core).execute(ast::CSRImm((bv(#csr), bv(#uimm), #rd, csrop::CSRRC))) },
+            ))
+        }
 
         // Loads and Stores
         "li" => {
