@@ -328,6 +328,48 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<TokenSt
             let rs1 = Riscv::emit_reg(&ops[1]);
             Ok(quote! { core.csrrc(#rd, #csr, #rs1).unwrap(); })
         }
+        "csrrwi" => {
+            check_nb_op(instr, 3)?;
+            let rd = Riscv::emit_reg(&ops[0]);
+            let csr = emit_csr(&ops[1]);
+            let uimm = emit_integer(&ops[2], consts);
+            Ok(quote! { (*core).csrrwi(#rd, #csr, #uimm).unwrap() })
+        }
+        "csrrsi" => {
+            check_nb_op(instr, 3)?;
+            let rd = Riscv::emit_reg(&ops[0]);
+            let csr = emit_csr(&ops[1]);
+            let uimm = emit_integer(&ops[2], consts);
+            Ok(quote! { (*core).csrrsi(#rd, #csr, #uimm).unwrap() })
+        }
+        "csrrci" => {
+            check_nb_op(instr, 3)?;
+            let rd = Riscv::emit_reg(&ops[0]);
+            let csr = emit_csr(&ops[1]);
+            let uimm = emit_integer(&ops[2], consts);
+            Ok(quote! { (*core).csrrci(#rd, #csr, #uimm).unwrap() })
+        }
+        "csrwi" => {
+            check_nb_op(instr, 2)?;
+            let rd = Riscv::emit_reg("x0");
+            let csr = emit_csr(&ops[0]);
+            let uimm = emit_integer(&ops[1], consts);
+            Ok(quote! { (*core).csrrwi(#rd, #csr, #uimm).unwrap() })
+        }
+        "csrsi" => {
+            check_nb_op(instr, 2)?;
+            let rd = Riscv::emit_reg("x0");
+            let csr = emit_csr(&ops[0]);
+            let uimm = emit_integer(&ops[1], consts);
+            Ok(quote! { (*core).csrrsi(#rd, #csr, #uimm).unwrap() })
+        }
+        "csrci" => {
+            check_nb_op(instr, 2)?;
+            let rd = Riscv::emit_reg("x0");
+            let csr = emit_csr(&ops[0]);
+            let uimm = emit_integer(&ops[1], consts);
+            Ok(quote! { (*core).csrrci(#rd, #csr, #uimm).unwrap() })
+        }
 
         // Loads and Stores
         "li" => {
