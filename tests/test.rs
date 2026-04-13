@@ -45,6 +45,68 @@ fn csr() {
 }
 
 #[test]
+fn csr_immediate() {
+    // csrwi: write immediate to CSR
+    rasm!("csrwi mscratch, 0x15");
+    SOFT_CORE.with_borrow_mut(|core| {
+        assert_eq!(core.mscratch.bits(), 0x15, "csrwi failed");
+    });
+
+    // csrsi: set bits in CSR using immediate
+    rasm!("csrwi mscratch, 0x0a");
+    rasm!("csrsi mscratch, 0x15");
+    SOFT_CORE.with_borrow_mut(|core| {
+        assert_eq!(core.mscratch.bits(), 0x1f, "csrsi failed");
+    });
+
+    // csrci: clear bits in CSR using immediate
+    rasm!("csrwi mscratch, 0x1f");
+    rasm!("csrci mscratch, 0x15");
+    SOFT_CORE.with_borrow_mut(|core| {
+        assert_eq!(core.mscratch.bits(), 0x0a, "csrci failed");
+    });
+
+    // csrrwi: read old value into rd, write immediate to CSR
+    rasm!("csrwi mscratch, 0x1f");
+    let prev: u64;
+    rasm!(
+        "csrrwi {prev}, mscratch, 0x05",
+        prev = out(reg) prev,
+        options(nomem)
+    );
+    assert_eq!(prev, 0x1f, "csrrwi: prev incorrect");
+    SOFT_CORE.with_borrow_mut(|core| {
+        assert_eq!(core.mscratch.bits(), 0x05, "csrrwi: write failed");
+    });
+
+    // csrrsi: read old value into rd, set bits in CSR using immediate
+    rasm!("csrwi mscratch, 0x0a");
+    let prev: u64;
+    rasm!(
+        "csrrsi {prev}, mscratch, 0x15",
+        prev = out(reg) prev,
+        options(nomem)
+    );
+    assert_eq!(prev, 0x0a, "csrrsi: prev incorrect");
+    SOFT_CORE.with_borrow_mut(|core| {
+        assert_eq!(core.mscratch.bits(), 0x1f, "csrrsi: set failed");
+    });
+
+    // csrrci: read old value into rd, clear bits in CSR using immediate
+    rasm!("csrwi mscratch, 0x1f");
+    let prev: u64;
+    rasm!(
+        "csrrci {prev}, mscratch, 0x15",
+        prev = out(reg) prev,
+        options(nomem)
+    );
+    assert_eq!(prev, 0x1f, "csrrci: prev incorrect");
+    SOFT_CORE.with_borrow_mut(|core| {
+        assert_eq!(core.mscratch.bits(), 0x0a, "csrrci: clear failed");
+    });
+}
+
+#[test]
 fn load() {
     unsafe {
         // Double words
