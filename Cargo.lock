@@ -73,9 +73,9 @@ dependencies = [
 
 [[package]]
 name = "libc"
-version = "0.2.184"
+version = "0.2.186"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48f5d2a454e16a5ea0f4ced81bd44e4cfc7bd3a507b61887c99fd3538b28e4af"
+checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 
 [[package]]
 name = "memchr"
@@ -209,12 +209,12 @@ dependencies = [
 [[package]]
 name = "softcore-prelude"
 version = "0.6.0"
-source = "git+https://github.com/CharlyCst/softcore-rs.git?branch=vector#7ddd2c56bd9c35c9e9ded4bd4c345e77b02c3ee1"
+source = "git+https://github.com/CharlyCst/softcore-rs.git?branch=vector#d0d93e70ccbbdaee03c51f9aed12f022031239da"
 
 [[package]]
 name = "softcore-rv64"
 version = "0.6.0"
-source = "git+https://github.com/CharlyCst/softcore-rs.git?branch=vector#7ddd2c56bd9c35c9e9ded4bd4c345e77b02c3ee1"
+source = "git+https://github.com/CharlyCst/softcore-rs.git?branch=vector#d0d93e70ccbbdaee03c51f9aed12f022031239da"
 dependencies = [
  "softcore-prelude",
 ]
@@ -232,9 +232,9 @@ dependencies = [
 
 [[package]]
 name = "typenum"
-version = "1.19.0"
+version = "1.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
+checksum = "40ce102ab67701b8526c123c1bab5cbe42d7040ccfd0f64af1a385808d2f43de"
 
 [[package]]
 name = "ucd-trie"

@@ -2,6 +2,7 @@ use softcore_asm_rv64::softcore_init;
 use softcore_rv64::{Core, new_core};
 
 softcore_init!(softcore_rv64::config::U74);
+use softcore_rv64::prelude::bvd;
 
 /// A macro that wraps the softcore asm macro to add the softcore parameter automatically.
 macro_rules! rasm {

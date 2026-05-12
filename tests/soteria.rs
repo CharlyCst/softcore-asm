@@ -16,6 +16,7 @@
 //! github](https://github.com/soteria-tools/soteria).
 
 use softcore_asm_rv64::softcore_init;
+use softcore_rv64::prelude::bvd;
 use softcore_rv64::raw::AccessType;
 use softcore_rv64::{Core, new_core};
 

@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use softcore_asm_rv64::softcore_init;
-use softcore_rv64::prelude::bv;
+use softcore_rv64::prelude::bvd;
 use softcore_rv64::registers as reg;
 use softcore_rv64::{Core, config, new_core};
 
@@ -38,7 +38,7 @@ fn csr() {
     rasm!("csrw mscratch, {cfg}", cfg = in(reg) mscratch_val, options(nomem));
     SOFT_CORE.with_borrow_mut(|core| {
         assert_eq!(
-            core.mscratch.bits(),
+            core.mscratch.unsigned(),
             mscratch_val,
             "Failed to write mscratch"
         );
@@ -50,21 +50,21 @@ fn csr_immediate() {
     // csrwi: write immediate to CSR
     rasm!("csrwi mscratch, 0x15");
     SOFT_CORE.with_borrow_mut(|core| {
-        assert_eq!(core.mscratch.bits(), 0x15, "csrwi failed");
+        assert_eq!(core.mscratch.unsigned(), 0x15, "csrwi failed");
     });
 
     // csrsi: set bits in CSR using immediate
     rasm!("csrwi mscratch, 0x0a");
     rasm!("csrsi mscratch, 0x15");
     SOFT_CORE.with_borrow_mut(|core| {
-        assert_eq!(core.mscratch.bits(), 0x1f, "csrsi failed");
+        assert_eq!(core.mscratch.unsigned(), 0x1f, "csrsi failed");
     });
 
     // csrci: clear bits in CSR using immediate
     rasm!("csrwi mscratch, 0x1f");
     rasm!("csrci mscratch, 0x15");
     SOFT_CORE.with_borrow_mut(|core| {
-        assert_eq!(core.mscratch.bits(), 0x0a, "csrci failed");
+        assert_eq!(core.mscratch.unsigned(), 0x0a, "csrci failed");
     });
 
     // csrrwi: read old value into rd, write immediate to CSR
@@ -77,7 +77,7 @@ fn csr_immediate() {
     );
     assert_eq!(prev, 0x1f, "csrrwi: prev incorrect");
     SOFT_CORE.with_borrow_mut(|core| {
-        assert_eq!(core.mscratch.bits(), 0x05, "csrrwi: write failed");
+        assert_eq!(core.mscratch.unsigned(), 0x05, "csrrwi: write failed");
     });
 
     // csrrsi: read old value into rd, set bits in CSR using immediate
@@ -90,7 +90,7 @@ fn csr_immediate() {
     );
     assert_eq!(prev, 0x0a, "csrrsi: prev incorrect");
     SOFT_CORE.with_borrow_mut(|core| {
-        assert_eq!(core.mscratch.bits(), 0x1f, "csrrsi: set failed");
+        assert_eq!(core.mscratch.unsigned(), 0x1f, "csrrsi: set failed");
     });
 
     // csrrci: read old value into rd, clear bits in CSR using immediate
@@ -103,7 +103,7 @@ fn csr_immediate() {
     );
     assert_eq!(prev, 0x1f, "csrrci: prev incorrect");
     SOFT_CORE.with_borrow_mut(|core| {
-        assert_eq!(core.mscratch.bits(), 0x0a, "csrrci: clear failed");
+        assert_eq!(core.mscratch.unsigned(), 0x0a, "csrrci: clear failed");
     });
 }
 
@@ -807,7 +807,7 @@ fn miralis_trap_detector() {
         for i in 1..32 {
             core.set(raw::regidx::new(i as u8), 100 + i as u64);
         }
-        core.mepc = bv(64, TRAP_ADDR);
+        core.mepc = bvd(64, TRAP_ADDR);
     });
 
     rasm!(
@@ -832,8 +832,8 @@ fn miralis_trap_detector() {
                 "Unexpected value in x{i}"
             );
         }
-        assert_eq!(core.mepc.bits(), TRAP_ADDR + 4);
-        assert_eq!(core.mscratch.bits(), 1);
+        assert_eq!(core.mepc.unsigned(), (TRAP_ADDR + 4) as i128);
+        assert_eq!(core.mscratch.unsigned(), 1);
     });
 }
 
@@ -849,7 +849,7 @@ fn concat_macro_basic() {
     );
 
     SOFT_CORE.with_borrow_mut(|core| {
-        assert_eq!(core.pmpaddr_n[0].bits(), pmpaddr_val);
+        assert_eq!(core.pmpaddr_n[0].unsigned(), pmpaddr_val as i128);
     });
 }
 
@@ -871,9 +871,9 @@ fn concat_macro_multiple_indices() {
     );
 
     SOFT_CORE.with_borrow_mut(|core| {
-        assert_eq!(core.pmpaddr_n[0].bits(), addr0);
-        assert_eq!(core.pmpaddr_n[1].bits(), addr1);
-        assert_eq!(core.pmpaddr_n[2].bits(), addr2);
+        assert_eq!(core.pmpaddr_n[0].unsigned(), addr0 as i128);
+        assert_eq!(core.pmpaddr_n[1].unsigned(), addr1 as i128);
+        assert_eq!(core.pmpaddr_n[2].unsigned(), addr2 as i128);
     });
 }
 
@@ -893,7 +893,7 @@ fn concat_macro_mixed_templates() {
 
     assert_eq!(result, 0x80);
     SOFT_CORE.with_borrow_mut(|core| {
-        assert_eq!(core.pmpaddr_n[3].bits(), addr);
+        assert_eq!(core.pmpaddr_n[3].unsigned(), addr as i128);
     });
 }
 
@@ -928,7 +928,7 @@ fn concat_macro_with_macro_rules() {
     }
 
     SOFT_CORE.with_borrow_mut(|core| {
-        assert_eq!(core.pmpaddr_n[4].bits(), pmpaddr_val);
+        assert_eq!(core.pmpaddr_n[4].unsigned(), pmpaddr_val as i128);
     });
 
     // Test writing to multiple registers using the macro
@@ -937,9 +937,9 @@ fn concat_macro_with_macro_rules() {
     asm_write_pmpaddr!(7, 0x8000);
 
     SOFT_CORE.with_borrow_mut(|core| {
-        assert_eq!(core.pmpaddr_n[5].bits(), 0x6000);
-        assert_eq!(core.pmpaddr_n[6].bits(), 0x7000);
-        assert_eq!(core.pmpaddr_n[7].bits(), 0x8000);
+        assert_eq!(core.pmpaddr_n[5].unsigned(), 0x6000);
+        assert_eq!(core.pmpaddr_n[6].unsigned(), 0x7000);
+        assert_eq!(core.pmpaddr_n[7].unsigned(), 0x8000);
     });
 }
 
@@ -1089,7 +1089,7 @@ fn shift_immediate() {
 #[test]
 fn vector_config() {
     let requested_vl: u64 = 8;
-    // TODO: Compute this from the config instead of hard-coding it
+    // TODO(Gurvan): Compute this from the config instead of hard-coding it
     let expected_vl: u64 = 4;
     // let number_of_used_register = 1;
     // let asked_size: u64 = number_of_used_register // Number of used register (m1)
@@ -1104,8 +1104,7 @@ fn vector_config() {
     // (m1).
     // Since a single vector register can only hold one byte or a single element, then we expect
     // the returned vl to be one.
-    // TODO: Write the same test but using multiple registers (m1, m2, m3, m4).
-    // We CANNOT exceed a BitVector size of 64 for now without trapping
+    // TODO(Gurvan): Write the same test but using multiple registers (m1, m2, m3, m4).
 
     rasm!(
         "vsetvli {vl_out}, {rs1}, e8, m4, ta, ma",
@@ -1152,8 +1151,8 @@ fn vector_config() {
     );
 
     SOFT_CORE.with_borrow_mut(|core| {
-        assert_eq!(core.vl.bits(), actual_vl);
-        // TODO: Assert that sew and other corresponds?
+        assert_eq!(core.vl.unsigned(), actual_vl as i128);
+        // TODO(Gurvan): Assert that sew and other corresponds?
         // let sew = softcore_rv64::raw::get_sew(core, ());
         // let lmul_pow = softcore_rv64::raw::get_lmul_pow(core, ()); // Should be 1.0
         // let vlen = softcore_rv64::raw::get_vlen(core);     // Should be 64
@@ -1163,24 +1162,38 @@ fn vector_config() {
 
 #[test]
 fn vector_memory_mempcy() {
-    unsafe {
-        let mut output = [0u8; 8];
-        let input: [u8; 8] = [0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE];
-        let vl: usize;
+    for a in 0u8..=0xFF {
+        for b in 0u8..=0xFF {
+            const MEM_BUFFER_SIZE: usize = 8;
+            let mut output = [0u8; MEM_BUFFER_SIZE];
+            let input: [u8; MEM_BUFFER_SIZE] = [
+                a,
+                b,
+                0xFFu8.wrapping_sub(a),
+                b.wrapping_add(a),
+                b.wrapping_sub(a),
+                0xFF,
+                0xFFu8.wrapping_sub(b),
+                a,
+            ];
+            let vl: usize;
 
-        rasm!(
-            "vsetvli {vl}, {rs1}, e8, m1, ta, ma",
-            "vle8.v v8, ({in_ptr})",
-            "vse8.v v8, ({out_ptr})",
+            unsafe {
+                rasm!(
+                    "vsetvli {vl}, {rs1}, e8, m1, ta, ma",
+                    "vle8.v v8, ({in_ptr})",
+                    "vse8.v v8, ({out_ptr})",
 
-            rs1 = in(reg) 8,
-            vl = out(reg) vl,
-            in_ptr = in(reg) input.as_ptr(),
-            out_ptr = in(reg) output.as_mut_ptr(),
-        );
+                    rs1 = in(reg) MEM_BUFFER_SIZE,
+                    vl = out(reg) vl,
+                    in_ptr = in(reg) input.as_ptr(),
+                    out_ptr = in(reg) output.as_mut_ptr(),
+                );
+            }
 
-        for i in 0..vl {
-            assert_eq!(output[i], input[i]);
+            for i in 0..vl {
+                assert_eq!(output[i], input[i]);
+            }
         }
     }
 }
@@ -1188,42 +1201,48 @@ fn vector_memory_mempcy() {
 #[test]
 fn vector_memory_memset() {
     const MEM_BUFFER_SIZE: usize = 8;
-    let mut mem_buffer = [0u8; MEM_BUFFER_SIZE];
-    let addr = mem_buffer.as_mut_ptr() as usize;
-    let val_to_store: u64 = 0xAB;
-    let actual_vl: u64;
-    unsafe {
-        rasm!(
-            "vsetvli {vl}, {rs1}, e8, m1, ta, ma",
-            "vmv.v.x v8, {scalar_val}",
-            "vse8.v v8, ({out_ptr})",
+    const INITIAL_VALUE: u8 = 0x00;
+    for val_to_store in 0u8..=0xFF {
+        let mut mem_buffer = [INITIAL_VALUE; MEM_BUFFER_SIZE];
+        let actual_vl: u64;
+        unsafe {
+            rasm!(
+                "vsetvli {vl}, {rs1}, e8, m1, ta, ma",
+                "vmv.v.x v8, {scalar_val}",
+                "vse8.v v8, ({out_ptr})",
 
-            rs1 = in(reg) MEM_BUFFER_SIZE,
-            vl = out(reg) actual_vl,
-            scalar_val = in(reg) val_to_store,
-            out_ptr = in(reg) addr,
-        );
-    }
-
-    for i in 0..MEM_BUFFER_SIZE {
-        if (i as u64) < actual_vl {
-            assert_eq!(
-                mem_buffer[i], 0xAB,
-                "Index {} should have been stored as 0xAB",
-                i
-            );
-        } else {
-            assert_eq!(
-                mem_buffer[i], 0x00,
-                "Index {} is beyond VL ({}) and should be untouched (0x00)",
-                i, actual_vl
+                rs1 = in(reg) MEM_BUFFER_SIZE,
+                vl = out(reg) actual_vl,
+                scalar_val = in(reg) val_to_store,
+                out_ptr = in(reg) mem_buffer.as_mut_ptr(),
+                out("v8")  _,
             );
         }
-    }
 
-    SOFT_CORE.with_borrow_mut(|core| {
-        assert_eq!(core.vl.bits(), actual_vl);
-    });
+        SOFT_CORE.with_borrow_mut(|core| {
+            assert_eq!(core.get_single_vec(reg::V8), bvd(2i128.pow(CONFIG.extensions.V.vlen_exp as u32), val_to_store as u64));
+        });
+
+        for i in 0..MEM_BUFFER_SIZE {
+            if (i as u64) < actual_vl {
+                assert_eq!(
+                    mem_buffer[i], val_to_store,
+                    "Index {} is before VL ({}) should have been stored as {}",
+                    i, actual_vl, val_to_store
+                );
+            } else {
+                assert_eq!(
+                    mem_buffer[i], 0x00,
+                    "Index {} is beyond VL ({}) and should be untouched ({})",
+                    i, actual_vl, INITIAL_VALUE
+                );
+            }
+        }
+
+        SOFT_CORE.with_borrow_mut(|core| {
+            assert_eq!(core.vl.unsigned(), actual_vl as i128);
+        });
+    }
 }
 
 #[test]

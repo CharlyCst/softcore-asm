@@ -31,7 +31,7 @@ macro_rules! itype {
         let rs1 = Riscv::emit_reg(&$instr.operands[1]);
         let imm = emit_integer(&$instr.operands[2], $consts);
         Ok(InstrToken::MayTrap(quote! {
-            (*core).execute(ast::ITYPE((bv(12, #imm), #rs1, #rd, iop::$op)))
+            (*core).execute(ast::ITYPE((bvd(12, #imm), #rs1, #rd, iop::$op)))
         }))
     }};
 }
@@ -44,7 +44,7 @@ macro_rules! shiftiop {
         let rs1 = Riscv::emit_reg(&$instr.operands[1]);
         let imm = emit_integer(&$instr.operands[2], $consts);
         Ok(InstrToken::MayTrap(quote! {
-            (*core).execute(ast::SHIFTIOP((bv(6, #imm), #rs1, #rd, sop::$op)))
+            (*core).execute(ast::SHIFTIOP((bvd(6, #imm), #rs1, #rd, sop::$op)))
         }))
     }};
 }
@@ -57,7 +57,7 @@ macro_rules! mul {
         let rs1 = Riscv::emit_reg(&$instr.operands[1]);
         let rs2 = Riscv::emit_reg(&$instr.operands[2]);
         Ok(InstrToken::MayTrap(quote! {
-            (*core).execute(ast::MUL((#rs2, #rs1, #rd, raw::encdec_mul_op_backwards(bv(3, $op_bits)))))
+            (*core).execute(ast::MUL((#rs2, #rs1, #rd, raw::encdec_mul_op_backwards(bvd(3, $op_bits)))))
         }))
     }};
 }
@@ -74,7 +74,7 @@ macro_rules! vvtype {
 
         /* TODO(Gurvan): For some reason just using vvfunct6 here does not work? */
         Ok(InstrToken::MayTrap(quote! {
-            (*core).execute(ast::VVTYPE((softcore_rv64::raw::vvfunct6::$op, bv(1, 1), #vs2, #vs1, #vd)))
+            (*core).execute(ast::VVTYPE((softcore_rv64::raw::vvfunct6::$op, bvd(1, 1), #vs2, #vs1, #vd)))
         }))
     }};
 }
@@ -302,7 +302,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[1]);
             let rs1 = Riscv::emit_reg(&ops[2]);
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::CSRReg((bv(12, #csr), #rs1, #rd, csrop::CSRRW))) },
+                quote! { (*core).execute(ast::CSRReg((bvd(12, #csr), #rs1, #rd, csrop::CSRRW))) },
             ))
         }
         "csrrs" => {
@@ -311,7 +311,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[1]);
             let rs1 = Riscv::emit_reg(&ops[2]);
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::CSRReg((bv(12, #csr), #rs1, #rd, csrop::CSRRS))) },
+                quote! { (*core).execute(ast::CSRReg((bvd(12, #csr), #rs1, #rd, csrop::CSRRS))) },
             ))
         }
         "csrrc" => {
@@ -320,7 +320,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[1]);
             let rs1 = Riscv::emit_reg(&ops[2]);
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::CSRReg((bv(12, #csr), #rs1, #rd, csrop::CSRRC))) },
+                quote! { (*core).execute(ast::CSRReg((bvd(12, #csr), #rs1, #rd, csrop::CSRRC))) },
             ))
         }
         "csrr" => {
@@ -329,7 +329,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[1]);
             let rs1 = Riscv::emit_reg("x0");
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::CSRReg((bv(12, #csr), #rs1, #rd, csrop::CSRRS))) },
+                quote! { (*core).execute(ast::CSRReg((bvd(12, #csr), #rs1, #rd, csrop::CSRRS))) },
             ))
         }
         "csrw" => {
@@ -338,7 +338,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[0]);
             let rs1 = Riscv::emit_reg(&ops[1]);
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::CSRReg((bv(12, #csr), #rs1, #rd, csrop::CSRRW))) },
+                quote! { (*core).execute(ast::CSRReg((bvd(12, #csr), #rs1, #rd, csrop::CSRRW))) },
             ))
         }
         "csrs" => {
@@ -347,7 +347,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[0]);
             let rs1 = Riscv::emit_reg(&ops[1]);
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::CSRReg((bv(12, #csr), #rs1, #rd, csrop::CSRRS))) },
+                quote! { (*core).execute(ast::CSRReg((bvd(12, #csr), #rs1, #rd, csrop::CSRRS))) },
             ))
         }
         "csrc" => {
@@ -356,7 +356,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[0]);
             let rs1 = Riscv::emit_reg(&ops[1]);
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::CSRReg((bv(12, #csr), #rs1, #rd, csrop::CSRRC))) },
+                quote! { (*core).execute(ast::CSRReg((bvd(12, #csr), #rs1, #rd, csrop::CSRRC))) },
             ))
         }
         "csrrwi" => {
@@ -365,7 +365,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[1]);
             let uimm = emit_integer(&ops[2], consts);
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::CSRImm((bv(12, #csr), bv(5, #uimm), #rd, csrop::CSRRW))) },
+                quote! { (*core).execute(ast::CSRImm((bvd(12, #csr), bvd(5, #uimm), #rd, csrop::CSRRW))) },
             ))
         }
         "csrrsi" => {
@@ -374,7 +374,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[1]);
             let uimm = emit_integer(&ops[2], consts);
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::CSRImm((bv(12, #csr), bv(5, #uimm), #rd, csrop::CSRRS))) },
+                quote! { (*core).execute(ast::CSRImm((bvd(12, #csr), bvd(5, #uimm), #rd, csrop::CSRRS))) },
             ))
         }
         "csrrci" => {
@@ -383,7 +383,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[1]);
             let uimm = emit_integer(&ops[2], consts);
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::CSRImm((bv(12, #csr), bv(5, #uimm), #rd, csrop::CSRRC))) },
+                quote! { (*core).execute(ast::CSRImm((bvd(12, #csr), bvd(5, #uimm), #rd, csrop::CSRRC))) },
             ))
         }
         "csrwi" => {
@@ -392,7 +392,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[0]);
             let uimm = emit_integer(&ops[1], consts);
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::CSRImm((bv(12, #csr), bv(5, #uimm), #rd, csrop::CSRRW))) },
+                quote! { (*core).execute(ast::CSRImm((bvd(12, #csr), bvd(5, #uimm), #rd, csrop::CSRRW))) },
             ))
         }
         "csrsi" => {
@@ -401,7 +401,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[0]);
             let uimm = emit_integer(&ops[1], consts);
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::CSRImm((bv(12, #csr), bv(5, #uimm), #rd, csrop::CSRRS))) },
+                quote! { (*core).execute(ast::CSRImm((bvd(12, #csr), bvd(5, #uimm), #rd, csrop::CSRRS))) },
             ))
         }
         "csrci" => {
@@ -410,7 +410,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[0]);
             let uimm = emit_integer(&ops[1], consts);
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::CSRImm((bv(12, #csr), bv(5, #uimm), #rd, csrop::CSRRC))) },
+                quote! { (*core).execute(ast::CSRImm((bvd(12, #csr), bvd(5, #uimm), #rd, csrop::CSRRC))) },
             ))
         }
 
@@ -610,7 +610,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let rs1 = Riscv::emit_reg(&ops[0]);
             let rd = Riscv::emit_reg("x0");
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::JALR((bv(12, 0), #rs1, #rd))) },
+                quote! { (*core).execute(ast::JALR((bvd(12, 0), #rs1, #rd))) },
             ))
         }
 
@@ -685,10 +685,10 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let vma = emit_mask_policy(&ops[5]);
             Ok(InstrToken::MayTrap(quote! {
                 (*core).execute(ast::VSETVLI((
-                    bv(1, #vma),
-                    bv(1, #vta),
-                    bv(3, #sew),
-                    bv(3, #lmul),
+                    bvd(1, #vma),
+                    bvd(1, #vta),
+                    bvd(3, #sew),
+                    bvd(3, #lmul),
                     #rs1,
                     #rd
                 )))
@@ -761,7 +761,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
         // V Extension: Memory
         "vle8.v" => {
             check_nb_op(instr, 2)?;
-            /* TODO(Gurvan): For now, we don't support masking */
+            // TODO(Gurvan): For now, we don't support masking
             let vd = emit_vreg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(InstrToken::Infallible(quote! {
@@ -770,13 +770,13 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
                     let mut elements = Vec::with_capacity(vl);
 
                     for i in 0..vl {
-                        /* TODO(Gurvan): If this fail, we should set vstart */
-                        /* TODO(Gurvan): Making this code more generic could be better? */
+                        // TODO(Gurvan): If this fail, we should set vstart
+                        // TODO(Gurvan): Making this code more generic could be better?
                         let addr = core::ptr::with_exposed_provenance::<u8>(base_addr + i);
                         let val = core::ptr::read(addr);
 
-                        /* TODO(Gurvan): Should the bitvector size here be the size of a vector register? */
-                        elements.push(bv(8, val as u64));
+                        // TODO(Gurvan): Should the bitvector size here be the size of a vector register?
+                        elements.push(bvd(8, val as u64));
                     }
 
                     (*core).set_vec(#vd, elements);
@@ -795,18 +795,17 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
         }
         "vse8.v" => {
             check_nb_op(instr, 2)?;
-            /* TODO(Gurvan): For now, we don't support masking */
+            // TODO(Gurvan): For now, we don't support masking
             let vs3 = emit_vreg(&ops[0]);
             let (imm, rs1) = emit_immediate_offset(&ops[1], consts)?;
             Ok(InstrToken::Infallible(quote! {
-
                 let base_addr = #imm.wrapping_add((*core).get(#rs1)) as usize;
                 let elements = (*core).get_vec(#vs3);
-                for (i, bv) in elements.into_iter().enumerate() {
-                    /* TODO(Gurvan): If this fail, we should set vstart */
-                    /* TODO(Gurvan): Making this code more generic could be better? */
+                for (i, v) in elements.into_iter().enumerate() {
+                    // TODO(Gurvan): If this fail, we should set vstart
+                    // TODO(Gurvan): Making this code more generic could be better?
                     let addr = core::ptr::with_exposed_provenance_mut::<u8>(base_addr + i);
-                    let val = bv.to_raw_le()[0];
+                    let val = v.to_raw_le()[0];
                     core::ptr::write(addr, val);
                 }
             }))
@@ -866,12 +865,12 @@ fn emit_csr(csr: &str) -> TokenStream {
     drop(cache);
 
     let csr_id = if csr_name_map_backwards_matches(static_csr) {
-        csr_name_map_backwards(static_csr).bits()
+        csr_name_map_backwards(static_csr).unsigned() as u64
     } else {
         // For unknown CSR we return an arbitrary, non-existant CSR.
         // We picked an arbitrary value in the middle of custom U-mode read/write range
         // (0x800-0x8FF)
-        0x8C4
+        0x8C4 as u64
     };
 
     quote! { #csr_id }
