@@ -812,8 +812,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
                     for i in 0..vl {
                         // TODO(Gurvan): If this fail, we should set vstart
                         // TODO(Gurvan): Making this code more generic could be better?
-                        // TODO(Gurvan): Maybe we should be using wrapping_add here too
-                        let addr = core::ptr::with_exposed_provenance::<u8>(base_addr + i);
+                        let addr = core::ptr::with_exposed_provenance::<u8>(base_addr.wrapping_add(i));
                         let val = core::ptr::read(addr);
 
                         // TODO(Gurvan): Should the bitvector size here be the size of a vector register?
@@ -847,8 +846,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
                     let v = &elements[i];
                     // TODO(Gurvan): If this fail, we should set vstart
                     // TODO(Gurvan): Making this code more generic could be better?
-                    // TODO(Gurvan): Maybe we should be using wrapping_add here too
-                    let addr = core::ptr::with_exposed_provenance_mut::<u8>(base_addr + i);
+                    let addr = core::ptr::with_exposed_provenance_mut::<u8>(base_addr.wrapping_add(i));
                     let val = v.to_raw_le()[0];
                     core::ptr::write(addr, val);
                 }
