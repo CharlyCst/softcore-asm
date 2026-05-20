@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use softcore_asm_rv64::softcore_init;
-use softcore_rv64::prelude::bvd;
+use softcore_rv64::prelude::{bvd, BoundedVec};
 use softcore_rv64::registers as reg;
 use softcore_rv64::{Core, config, new_core};
 
@@ -1243,6 +1243,30 @@ fn vector_memory_memset() {
             assert_eq!(core.vl.unsigned(), actual_vl as i128);
         });
     }
+}
+
+#[test]
+fn vector_vitype() {
+    const ARRAY_SIZE: usize = 4;
+    let mut output = [0u8; ARRAY_SIZE];
+    let mut number_of_processed_element: usize;
+
+    // "vmv.v.i"
+    // unsafe {
+    //     rasm!(
+    //         "vsetvli {vl}, {len}, e8, m1, ta, ma",
+    //         "vmv.v.i v0, 10",
+    //         "vse8.v v0, ({ptr_out})",
+
+    //         vl = out(reg) number_of_processed_element,
+    //         len = in(reg) ARRAY_SIZE,
+    //         ptr_out = in(reg) output.as_mut_ptr(),
+    //     );
+    // }
+
+    // for i in 0..number_of_processed_element {
+    //     assert!(output[i] == 10);
+    // }
 }
 
 #[test]

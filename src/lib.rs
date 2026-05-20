@@ -64,7 +64,7 @@ pub fn handle_trap(addr: u64, trap_handlers: &[extern "C" fn()]) {
 
 // ————————————————————————————— Softcore Macro ————————————————————————————— //
 
-/// Initialize the core with the provided configuration as a threat-local variable.
+/// Initialize the core with the provided configuration as a thread-local variable.
 ///
 /// It is require to initialize the core in order to use the `soft_asm!` macro, which needs to
 /// access the core in order to emulate assembly instructions.

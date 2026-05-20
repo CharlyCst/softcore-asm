@@ -70,11 +70,36 @@ macro_rules! vvtype {
         let vs2 = emit_vreg(&$instr.operands[1]);
         let vs1 = emit_vreg(&$instr.operands[2]);
         let vd = emit_vreg(&$instr.operands[0]);
-        /* TODO: For now we don't support masking */
 
-        /* TODO(Gurvan): For some reason just using vvfunct6 here does not work? */
         Ok(InstrToken::MayTrap(quote! {
-            (*core).execute(ast::VVTYPE((softcore_rv64::raw::vvfunct6::$op, bvd(1, 1), #vs2, #vs1, #vd)))
+            (*core).execute(ast::VVTYPE((
+                softcore_rv64::raw::vvfunct6::$op,
+                 bvd(1, 1), // TODO: For now we don't support masking
+                 #vs2,
+                 #vs1,
+                 #vd
+                )))
+        }))
+    }};
+}
+
+/// Emit the tokens for VITYPE type instructions
+macro_rules! vitype {
+    ($instr: ident, $op:path, $consts: ident) => {{
+        check_nb_op($instr, 3)?;
+
+        let vs2 = emit_vreg(&$instr.operands[1]);
+        let simm = emit_integer(&$instr.operands[2], $consts);
+        let vd = emit_vreg(&$instr.operands[0]);
+
+        // TODO(Gurvan): For some reason just using vvfunct6 here does not work?
+        Ok(InstrToken::MayTrap(quote! {
+            (*core).execute(ast::VITYPE(
+                    (softcore_rv64::raw::vifunct6::$op,
+                     bvd(1, 1), // For now we don't support masking
+                     #vs2,
+                     bvd(5, #simm),
+                     #vd)))
         }))
     }};
 }
@@ -758,6 +783,21 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
         "vssra.vv" => {
             vvtype!(instr, VV_VSSRA)
         }
+        // V Extension :VIType
+        "vadd.v.i" => {
+            vitype!(instr, VI_VADD, consts)
+        }
+        "vmv.v.i" => {
+            check_nb_op(instr, 2)?;
+            let mut operands = ops.clone();
+            operands.push("0".to_string());
+            let instr = &Instr {
+                mnemonic: "vadd.v.i".to_string(),
+                operands,
+                attributes: vec![],
+            };
+            vitype!(instr, VI_VADD, consts)
+        }
         // V Extension: Memory
         "vle8.v" => {
             check_nb_op(instr, 2)?;
@@ -767,7 +807,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             Ok(InstrToken::Infallible(quote! {
                     let base_addr = #imm.wrapping_add((*core).get(#rs1)) as usize;
                     let vl = (*core).vl.unsigned() as usize;
-                    let mut elements = Vec::with_capacity(vl);
+                    let mut elements = BoundedVec::new();
 
                     for i in 0..vl {
                         // TODO(Gurvan): If this fail, we should set vstart
@@ -801,6 +841,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             Ok(InstrToken::Infallible(quote! {
                 let base_addr = #imm.wrapping_add((*core).get(#rs1)) as usize;
                 let elements = (*core).get_vec(#vs3);
+                // TODO: This will probably not work
                 for (i, v) in elements.into_iter().enumerate() {
                     // TODO(Gurvan): If this fail, we should set vstart
                     // TODO(Gurvan): Making this code more generic could be better?

@@ -209,12 +209,12 @@ dependencies = [
 [[package]]
 name = "softcore-prelude"
 version = "0.6.0"
-source = "git+https://github.com/CharlyCst/softcore-rs.git?branch=vector#d0d93e70ccbbdaee03c51f9aed12f022031239da"
+source = "git+https://github.com/CharlyCst/softcore-rs.git?branch=vector#202b722a9ae0528b3e0e283ac1718d21f7211e2b"
 
 [[package]]
 name = "softcore-rv64"
 version = "0.6.0"
-source = "git+https://github.com/CharlyCst/softcore-rs.git?branch=vector#d0d93e70ccbbdaee03c51f9aed12f022031239da"
+source = "git+https://github.com/CharlyCst/softcore-rs.git?branch=vector#202b722a9ae0528b3e0e283ac1718d21f7211e2b"
 dependencies = [
  "softcore-prelude",
 ]
