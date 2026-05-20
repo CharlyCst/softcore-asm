@@ -812,6 +812,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
                     for i in 0..vl {
                         // TODO(Gurvan): If this fail, we should set vstart
                         // TODO(Gurvan): Making this code more generic could be better?
+                        // TODO(Gurvan): Maybe we should be using wrapping_add here too
                         let addr = core::ptr::with_exposed_provenance::<u8>(base_addr + i);
                         let val = core::ptr::read(addr);
 
@@ -842,9 +843,11 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
                 let base_addr = #imm.wrapping_add((*core).get(#rs1)) as usize;
                 let elements = (*core).get_vec(#vs3);
                 // TODO: This will probably not work
-                for (i, v) in elements.into_iter().enumerate() {
+                for i in 0..elements.len(){
+                    let v = &elements[i];
                     // TODO(Gurvan): If this fail, we should set vstart
                     // TODO(Gurvan): Making this code more generic could be better?
+                    // TODO(Gurvan): Maybe we should be using wrapping_add here too
                     let addr = core::ptr::with_exposed_provenance_mut::<u8>(base_addr + i);
                     let val = v.to_raw_le()[0];
                     core::ptr::write(addr, val);
