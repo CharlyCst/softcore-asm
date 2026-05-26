@@ -753,10 +753,8 @@ fn fn_call_from_assembly() {
     rasm!(
         "// #[abi(\"C\", 2, u64)]",
         "call {func}",
-        "mv {result}, a0",
-        result = out(reg) result,
         func = sym add_two,
-        in("a0") 100,
+        result = inout("a0") 100 => result,
         in("a1") 42,
     );
     assert_eq!(result, 142);
