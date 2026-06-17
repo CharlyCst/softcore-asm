@@ -259,15 +259,23 @@ fn wrap_fallible_code<A: Arch>(
 ) -> proc_macro2::TokenStream {
     let trap_handlers = &ctx.trap_handlers;
     let softcore_module = ctx.softcore.clone();
-    quote! {
-        match { #instruction_code } {
-            Trap::Some(addr) => {
-                handle_trap(addr, &[#(#trap_handlers),*]);
-                // We need to retrive the pointer again to ensure there is no live references
-                core = #softcore_module::_get_softcore_ptr();
-            },
-            Trap::None => (),
-        };
+    if trap_handlers.is_empty() {
+        quote! {
+            if let Trap::Some(_) = #instruction_code {
+                panic!("Assembly trapped, but not trap handled was provided to softcore");
+            };
+        }
+    } else {
+        quote! {
+            match { #instruction_code } {
+                Trap::Some(addr) => {
+                    handle_trap(addr, &[#(#trap_handlers),*]);
+                    // We need to retrive the pointer again to ensure there is no live references
+                    core = #softcore_module::_get_softcore_ptr();
+                },
+                Trap::None => (),
+            };
+        }
     }
 }
 
