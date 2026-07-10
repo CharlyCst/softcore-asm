@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use softcore_asm_rv64::softcore_init;
-use softcore_rv64::prelude::{bvd, BoundedVec};
+use softcore_rv64::prelude::{bv, bvd, BoundedVec};
 use softcore_rv64::registers as reg;
 use softcore_rv64::{Core, config, new_core};
 
@@ -807,7 +807,7 @@ fn miralis_trap_detector() {
         for i in 1..32 {
             core.set(raw::regidx::new(i as u8), 100 + i as u64);
         }
-        core.mepc = bvd(64, TRAP_ADDR);
+        core.mepc = bv(TRAP_ADDR);
     });
 
     rasm!(

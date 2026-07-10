@@ -31,7 +31,7 @@ macro_rules! itype {
         let rs1 = Riscv::emit_reg(&$instr.operands[1]);
         let imm = emit_integer(&$instr.operands[2], $consts);
         Ok(InstrToken::MayTrap(quote! {
-            (*core).execute(ast::ITYPE((bvd(12, #imm), #rs1, #rd, iop::$op)))
+            (*core).execute(ast::ITYPE((bv(#imm), #rs1, #rd, iop::$op)))
         }))
     }};
 }
@@ -44,7 +44,7 @@ macro_rules! shiftiop {
         let rs1 = Riscv::emit_reg(&$instr.operands[1]);
         let imm = emit_integer(&$instr.operands[2], $consts);
         Ok(InstrToken::MayTrap(quote! {
-            (*core).execute(ast::SHIFTIOP((bvd(6, #imm), #rs1, #rd, sop::$op)))
+            (*core).execute(ast::SHIFTIOP((bv(#imm), #rs1, #rd, sop::$op)))
         }))
     }};
 }
@@ -57,7 +57,7 @@ macro_rules! mul {
         let rs1 = Riscv::emit_reg(&$instr.operands[1]);
         let rs2 = Riscv::emit_reg(&$instr.operands[2]);
         Ok(InstrToken::MayTrap(quote! {
-            (*core).execute(ast::MUL((#rs2, #rs1, #rd, raw::encdec_mul_op_backwards(bvd(3, $op_bits)))))
+            (*core).execute(ast::MUL((#rs2, #rs1, #rd, raw::encdec_mul_op_backwards(bv($op_bits)))))
         }))
     }};
 }
@@ -74,7 +74,7 @@ macro_rules! vvtype {
         Ok(InstrToken::MayTrap(quote! {
             (*core).execute(ast::VVTYPE((
                 softcore_rv64::raw::vvfunct6::$op,
-                 bvd(1, 1), // TODO: For now we don't support masking
+                 bv(1), // TODO: For now we don't support masking
                  #vs2,
                  #vs1,
                  #vd
@@ -96,9 +96,9 @@ macro_rules! vitype {
         Ok(InstrToken::MayTrap(quote! {
             (*core).execute(ast::VITYPE(
                     (softcore_rv64::raw::vifunct6::$op,
-                     bvd(1, 1), // For now we don't support masking
+                     bv(1), // For now we don't support masking
                      #vs2,
-                     bvd(5, #simm),
+                     bv(#simm),
                      #vd)))
         }))
     }};
@@ -327,7 +327,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[1]);
             let rs1 = Riscv::emit_reg(&ops[2]);
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::CSRReg((bvd(12, #csr), #rs1, #rd, csrop::CSRRW))) },
+                quote! { (*core).execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRW))) },
             ))
         }
         "csrrs" => {
@@ -336,7 +336,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[1]);
             let rs1 = Riscv::emit_reg(&ops[2]);
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::CSRReg((bvd(12, #csr), #rs1, #rd, csrop::CSRRS))) },
+                quote! { (*core).execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRS))) },
             ))
         }
         "csrrc" => {
@@ -345,7 +345,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[1]);
             let rs1 = Riscv::emit_reg(&ops[2]);
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::CSRReg((bvd(12, #csr), #rs1, #rd, csrop::CSRRC))) },
+                quote! { (*core).execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRC))) },
             ))
         }
         "csrr" => {
@@ -354,7 +354,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[1]);
             let rs1 = Riscv::emit_reg("x0");
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::CSRReg((bvd(12, #csr), #rs1, #rd, csrop::CSRRS))) },
+                quote! { (*core).execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRS))) },
             ))
         }
         "csrw" => {
@@ -363,7 +363,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[0]);
             let rs1 = Riscv::emit_reg(&ops[1]);
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::CSRReg((bvd(12, #csr), #rs1, #rd, csrop::CSRRW))) },
+                quote! { (*core).execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRW))) },
             ))
         }
         "csrs" => {
@@ -372,7 +372,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[0]);
             let rs1 = Riscv::emit_reg(&ops[1]);
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::CSRReg((bvd(12, #csr), #rs1, #rd, csrop::CSRRS))) },
+                quote! { (*core).execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRS))) },
             ))
         }
         "csrc" => {
@@ -381,7 +381,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[0]);
             let rs1 = Riscv::emit_reg(&ops[1]);
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::CSRReg((bvd(12, #csr), #rs1, #rd, csrop::CSRRC))) },
+                quote! { (*core).execute(ast::CSRReg((bv(#csr), #rs1, #rd, csrop::CSRRC))) },
             ))
         }
         "csrrwi" => {
@@ -390,7 +390,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[1]);
             let uimm = emit_integer(&ops[2], consts);
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::CSRImm((bvd(12, #csr), bvd(5, #uimm), #rd, csrop::CSRRW))) },
+                quote! { (*core).execute(ast::CSRImm((bv(#csr), bv(#uimm), #rd, csrop::CSRRW))) },
             ))
         }
         "csrrsi" => {
@@ -399,7 +399,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[1]);
             let uimm = emit_integer(&ops[2], consts);
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::CSRImm((bvd(12, #csr), bvd(5, #uimm), #rd, csrop::CSRRS))) },
+                quote! { (*core).execute(ast::CSRImm((bv(#csr), bv(#uimm), #rd, csrop::CSRRS))) },
             ))
         }
         "csrrci" => {
@@ -408,7 +408,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[1]);
             let uimm = emit_integer(&ops[2], consts);
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::CSRImm((bvd(12, #csr), bvd(5, #uimm), #rd, csrop::CSRRC))) },
+                quote! { (*core).execute(ast::CSRImm((bv(#csr), bv(#uimm), #rd, csrop::CSRRC))) },
             ))
         }
         "csrwi" => {
@@ -417,7 +417,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[0]);
             let uimm = emit_integer(&ops[1], consts);
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::CSRImm((bvd(12, #csr), bvd(5, #uimm), #rd, csrop::CSRRW))) },
+                quote! { (*core).execute(ast::CSRImm((bv(#csr), bv(#uimm), #rd, csrop::CSRRW))) },
             ))
         }
         "csrsi" => {
@@ -426,7 +426,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[0]);
             let uimm = emit_integer(&ops[1], consts);
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::CSRImm((bvd(12, #csr), bvd(5, #uimm), #rd, csrop::CSRRS))) },
+                quote! { (*core).execute(ast::CSRImm((bv(#csr), bv(#uimm), #rd, csrop::CSRRS))) },
             ))
         }
         "csrci" => {
@@ -435,7 +435,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let csr = emit_csr(&ops[0]);
             let uimm = emit_integer(&ops[1], consts);
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::CSRImm((bvd(12, #csr), bvd(5, #uimm), #rd, csrop::CSRRC))) },
+                quote! { (*core).execute(ast::CSRImm((bv(#csr), bv(#uimm), #rd, csrop::CSRRC))) },
             ))
         }
 
@@ -635,7 +635,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let rs1 = Riscv::emit_reg(&ops[0]);
             let rd = Riscv::emit_reg("x0");
             Ok(InstrToken::MayTrap(
-                quote! { (*core).execute(ast::JALR((bvd(12, 0), #rs1, #rd))) },
+                quote! { (*core).execute(ast::JALR((bv(0), #rs1, #rd))) },
             ))
         }
 
@@ -710,10 +710,10 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             let vma = emit_mask_policy(&ops[5]);
             Ok(InstrToken::MayTrap(quote! {
                 (*core).execute(ast::VSETVLI((
-                    bvd(1, #vma),
-                    bvd(1, #vta),
-                    bvd(3, #sew),
-                    bvd(3, #lmul),
+                    bv(#vma),
+                    bv(#vta),
+                    bv(#sew),
+                    bv(#lmul),
                     #rs1,
                     #rd
                 )))
