@@ -6,7 +6,13 @@ Softcore-asm is an experiment Rust macro that accept standard inline Rust assemb
 
 ## Example
 
-The following macro:
+First, initialize a thread-local software core:
+
+```rs
+softcore_asm_rv64::softcore_init!(softcore_rv64::config::U74);
+```
+
+Then, the following macro:
 
 ```rs
 softcore_asm_rv64::asm!(
@@ -21,24 +27,42 @@ softcore_asm_rv64::asm!(
     "csrrw x5, mscratch, x5",
     // Return back to miralis
     "mret",
-    softcore(SOFT_CORE.with_borrow_mut)
+    // Path to the module where `softcore_init!` is used.
+    // `self` when within the same module.
+    softcore(self) 
 );
 ```
 
 Emits the following Rust code:
 
 ```rs
-SOFT_CORE.with_borrow_mut(|core| {
-    core.csrrw(reg::X0, csr_name_map_backwards("mscratch").bits(), reg::X5)
-        .unwrap();
-    core.csrrs(reg::X5, csr_name_map_backwards("mepc").bits(), reg::X0)
-        .unwrap();
-    core.execute(ast::ITYPE((bv(4u64), reg::X5, reg::X5, iop::ADDI)));
-    core.csrrw(reg::X0, csr_name_map_backwards("mepc").bits(), reg::X5)
-        .unwrap();
-    core.execute(ast::ITYPE((bv(1u64), reg::X0, reg::X5, iop::ADDI)));
-    core.csrrw(reg::X5, csr_name_map_backwards("mscratch").bits(), reg::X5)
-        .unwrap();
-    core.execute(ast::MRET(()));
-})
+{
+    unsafe {
+        let mut core = self::_get_softcore_ptr();
+        if let Trap::Some(_) = (*core).execute(ast::CSRReg((bv(832u64), reg::X5, reg::X0, csrop::CSRRW))) {
+            panic!(...);
+        }
+        if let Trap::Some(_) = (*core).execute(ast::CSRReg((bv(833u64), reg::X0, reg::X5, csrop::CSRRS))) {
+            panic!(...);
+        }
+        if let Trap::Some(_) = (*core).execute(ast::ITYPE((bv(4u64), reg::X5, reg::X5, iop::ADDI))) {
+            panic!(...);
+        }
+        if let Trap::Some(_) = (*core).execute(ast::CSRReg((bv(833u64), reg::X5, reg::X0, csrop::CSRRW))) {
+            panic!(...);
+        }
+        if let Trap::Some(_) = (*core).execute(ast::ITYPE((bv(1u64), reg::X0, reg::X5, iop::ADDI))) {
+            panic!(...);
+        }
+        if let Trap::Some(_) = (*core).execute(ast::CSRReg((bv(832u64), reg::X5, reg::X5, csrop::CSRRW))) {
+            panic!(...);
+        }
+        if let Trap::Some(_) = (*core).execute(ast::MRET(())) {
+            panic!(...);
+        }
+    }
+}
 ```
+
+For usage examples, see how [softcore-asm is used in Miralis](https://github.com/CharlyCst/miralis/blob/10803bf8671c2759f03d7b2688fec17e8ec3a39e/src/arch/metal.rs).
+
