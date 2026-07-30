@@ -17,7 +17,7 @@ macro_rules! rtype {
         let rd = Riscv::emit_reg(&$instr.operands[0]);
         let rs1 = Riscv::emit_reg(&$instr.operands[1]);
         let rs2 = Riscv::emit_reg(&$instr.operands[2]);
-        Ok(InstrToken::MayTrap(quote! {
+        Ok(InstrToken::Infallible(quote! {
             (*core).execute(ast::RTYPE((#rs2, #rs1, #rd, rop::$op)))
         }))
     }};
@@ -30,7 +30,7 @@ macro_rules! itype {
         let rd = Riscv::emit_reg(&$instr.operands[0]);
         let rs1 = Riscv::emit_reg(&$instr.operands[1]);
         let imm = emit_integer(&$instr.operands[2], $consts);
-        Ok(InstrToken::MayTrap(quote! {
+        Ok(InstrToken::Infallible(quote! {
             (*core).execute(ast::ITYPE((bv(#imm), #rs1, #rd, iop::$op)))
         }))
     }};
@@ -43,7 +43,7 @@ macro_rules! shiftiop {
         let rd = Riscv::emit_reg(&$instr.operands[0]);
         let rs1 = Riscv::emit_reg(&$instr.operands[1]);
         let imm = emit_integer(&$instr.operands[2], $consts);
-        Ok(InstrToken::MayTrap(quote! {
+        Ok(InstrToken::Infallible(quote! {
             (*core).execute(ast::SHIFTIOP((bv(#imm), #rs1, #rd, sop::$op)))
         }))
     }};
