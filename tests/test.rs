@@ -1434,3 +1434,140 @@ fn vector_vvtype() {
 
     // TODO: Test saturating arithmetic
 }
+
+#[test]
+fn vector_vxtype() {
+    const ARRAY_SIZE: usize = 4;
+    let input_a: [u8; ARRAY_SIZE] = [1, 2, 3, 4];
+    let scalar_b: u8 = 2;
+    let mut output = [0u8; ARRAY_SIZE];
+    let mut number_of_processed_element: usize;
+
+    // "vadd.vx"
+    unsafe {
+        rasm!(
+            "vsetvli {vl}, {len}, e8, m1, ta, ma",
+            "vle8.v v1, ({ptr_a})",
+            "vadd.vx v3, v1, {b}",
+            "vse8.v v3, ({ptr_out})",
+
+            vl = out(reg) number_of_processed_element,
+            len = in(reg) ARRAY_SIZE,
+            ptr_a = in(reg) input_a.as_ptr(),
+            b = in(reg) scalar_b,
+            ptr_out = in(reg) output.as_mut_ptr(),
+        );
+    }
+
+    for i in 0..number_of_processed_element {
+        assert_eq!(output[i], input_a[i] + scalar_b);
+    }
+
+    // "vminu.vx"
+    unsafe {
+        rasm!(
+            "vsetvli {vl}, {len}, e8, m1, ta, ma",
+            "vle8.v v1, ({ptr_a})",
+            "vminu.vx v3, v1, {b}",
+            "vse8.v v3, ({ptr_out})",
+
+            vl = out(reg) number_of_processed_element,
+            len = in(reg) ARRAY_SIZE,
+            ptr_a = in(reg) input_a.as_ptr(),
+            b = in(reg) scalar_b,
+            ptr_out = in(reg) output.as_mut_ptr(),
+        );
+    }
+
+    for i in 0..number_of_processed_element {
+        assert_eq!(output[i], input_a[i].min(scalar_b));
+    }
+
+    // TODO: "vmin.vx"
+
+    // "vmaxu.vx"
+    unsafe {
+        rasm!(
+            "vsetvli {vl}, {len}, e8, m1, ta, ma",
+            "vle8.v v1, ({ptr_a})",
+            "vmaxu.vx v3, v1, {b}",
+            "vse8.v v3, ({ptr_out})",
+
+            vl = out(reg) number_of_processed_element,
+            len = in(reg) ARRAY_SIZE,
+            ptr_a = in(reg) input_a.as_ptr(),
+            b = in(reg) scalar_b,
+            ptr_out = in(reg) output.as_mut_ptr(),
+        );
+    }
+
+    for i in 0..number_of_processed_element {
+        assert_eq!(output[i], input_a[i].max(scalar_b));
+    }
+
+    // TODO: "vmax.vx"
+
+    // "vand.vx"
+    unsafe {
+        rasm!(
+            "vsetvli {vl}, {len}, e8, m1, ta, ma",
+            "vle8.v v1, ({ptr_a})",
+            "vand.vx v3, v1, {b}",
+            "vse8.v v3, ({ptr_out})",
+
+            vl = out(reg) number_of_processed_element,
+            len = in(reg) ARRAY_SIZE,
+            ptr_a = in(reg) input_a.as_ptr(),
+            b = in(reg) scalar_b,
+            ptr_out = in(reg) output.as_mut_ptr(),
+        );
+    }
+
+    for i in 0..number_of_processed_element {
+        assert_eq!(output[i], input_a[i] & scalar_b);
+    }
+
+    // "vor.vx"
+    unsafe {
+        rasm!(
+            "vsetvli {vl}, {len}, e8, m1, ta, ma",
+            "vle8.v v1, ({ptr_a})",
+            "vor.vx v3, v1, {b}",
+            "vse8.v v3, ({ptr_out})",
+
+            vl = out(reg) number_of_processed_element,
+            len = in(reg) ARRAY_SIZE,
+            ptr_a = in(reg) input_a.as_ptr(),
+            b = in(reg) scalar_b,
+            ptr_out = in(reg) output.as_mut_ptr(),
+        );
+    }
+
+    for i in 0..number_of_processed_element {
+        assert_eq!(output[i], input_a[i] | scalar_b);
+    }
+
+    // "vxor.vx"
+    unsafe {
+        rasm!(
+            "vsetvli {vl}, {len}, e8, m1, ta, ma",
+            "vle8.v v1, ({ptr_a})",
+            "vxor.vx v3, v1, {b}",
+            "vse8.v v3, ({ptr_out})",
+
+            vl = out(reg) number_of_processed_element,
+            len = in(reg) ARRAY_SIZE,
+            ptr_a = in(reg) input_a.as_ptr(),
+            b = in(reg) scalar_b,
+            ptr_out = in(reg) output.as_mut_ptr(),
+        );
+    }
+
+    for i in 0..number_of_processed_element {
+        assert_eq!(output[i], input_a[i] ^ scalar_b);
+    }
+
+    // TODO: Test shifts
+
+    // TODO: Test saturating arithmetic
+}

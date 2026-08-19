@@ -82,6 +82,27 @@ macro_rules! vvtype {
         }))
     }};
 }
+///
+/// Emit the tokens for VXTYPE type instructions (Vector-Scalar)
+macro_rules! vxtype {
+    ($instr: ident, $op:path) => {{
+        check_nb_op($instr, 3)?;
+
+        let vd = emit_vreg(&$instr.operands[0]);
+        let vs2 = emit_vreg(&$instr.operands[1]);
+        let rs1 = Riscv::emit_reg(&$instr.operands[2]);
+
+        Ok(InstrToken::MayTrap(quote! {
+            (*core).execute(ast::VXTYPE((
+                softcore_rv64::raw::vxfunct6::$op,
+                bv(1), // TODO: For now we don't support masking
+                #vs2,
+                #rs1,
+                #vd
+            )))
+        }))
+    }};
+}
 
 /// Emit the tokens for VITYPE type instructions
 macro_rules! vitype {
@@ -783,7 +804,30 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
         "vssra.vv" => {
             vvtype!(instr, VV_VSSRA)
         }
-        // V Extension :VIType
+        // V Extension : VXType
+        "vadd.vx" => vxtype!(instr, VX_VADD),
+        "vsub.vx" => vxtype!(instr, VX_VSUB),
+        "vrsub.vx" => vxtype!(instr, VX_VRSUB),
+        "vminu.vx" => vxtype!(instr, VX_VMINU),
+        "vmin.vx" => vxtype!(instr, VX_VMIN),
+        "vmaxu.vx" => vxtype!(instr, VX_VMAXU),
+        "vmax.vx" => vxtype!(instr, VX_VMAX),
+        "vand.vx" => vxtype!(instr, VX_VAND),
+        "vor.vx" => vxtype!(instr, VX_VOR),
+        "vxor.vx" => vxtype!(instr, VX_VXOR),
+        "vrgather.vx" => vxtype!(instr, VX_VRGATHER),
+        "vsaddu.vx" => vxtype!(instr, VX_VSADDU),
+        "vsadd.vx" => vxtype!(instr, VX_VSADD),
+        "vssubu.vx" => vxtype!(instr, VX_VSSUBU),
+        "vssub.vx" => vxtype!(instr, VX_VSSUB),
+        "vsll.vx" => vxtype!(instr, VX_VSLL),
+        "vsmul.vx" => vxtype!(instr, VX_VSMUL),
+        "vsrl.vx" => vxtype!(instr, VX_VSRL),
+        "vsra.vx" => vxtype!(instr, VX_VSRA),
+        "vssrl.vx" => vxtype!(instr, VX_VSSRL),
+        "vssra.vx" => vxtype!(instr, VX_VSSRA),
+
+        // V Extension : VIType
         "vadd.v.i" => {
             vitype!(instr, VI_VADD, consts)
         }
