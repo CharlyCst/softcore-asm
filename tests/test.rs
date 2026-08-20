@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use softcore_asm_rv64::softcore_init;
-use softcore_rv64::prelude::{bv, bvd, BoundedVec};
+use softcore_rv64::prelude::{BoundedVec, bv, bvd};
 use softcore_rv64::registers as reg;
 use softcore_rv64::{Core, config, new_core};
 
@@ -1220,7 +1220,13 @@ fn vector_memory_memset() {
         }
 
         SOFT_CORE.with_borrow_mut(|core| {
-            assert_eq!(core.get_single_vec(reg::V8), bvd(2i128.pow(CONFIG.extensions.V.vlen_exp as u32), val_to_store as u64));
+            assert_eq!(
+                core.get_single_vec(reg::V8),
+                bvd(
+                    2i128.pow(CONFIG.extensions.V.vlen_exp as u32),
+                    val_to_store as u64
+                )
+            );
         });
 
         for i in 0..MEM_BUFFER_SIZE {

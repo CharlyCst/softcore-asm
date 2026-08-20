@@ -740,70 +740,29 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
                 )))
             }))
         }
-        // V Extension: Arithmetic
-        "vadd.vv" => {
-            vvtype!(instr, VV_VADD)
-        }
-        "vsub.vv" => {
-            vvtype!(instr, VV_VSUB)
-        }
-        "vminu.vv" => {
-            vvtype!(instr, VV_VMINU)
-        }
-        "vmin.vv" => {
-            vvtype!(instr, VV_VMIN)
-        }
-        "vmaxu.vv" => {
-            vvtype!(instr, VV_VMAXU)
-        }
-        "vmax.vv" => {
-            vvtype!(instr, VV_VMAX)
-        }
-        "vand.vv" => {
-            vvtype!(instr, VV_VAND)
-        }
-        "vor.vv" => {
-            vvtype!(instr, VV_VOR)
-        }
-        "vxor.vv" => {
-            vvtype!(instr, VV_VXOR)
-        }
-        "vrgather.vv" => {
-            vvtype!(instr, VV_VRGATHER)
-        }
-        "vrgatherei16.vv" => {
-            vvtype!(instr, VV_VRGATHEREI16)
-        }
-        "vsaddu.vv" => {
-            vvtype!(instr, VV_VSADDU)
-        }
-        "vsadd.vv" => {
-            vvtype!(instr, VV_VSADD)
-        }
-        "vssubu.vv" => {
-            vvtype!(instr, VV_VSSUBU)
-        }
-        "vssub.vv" => {
-            vvtype!(instr, VV_VSSUB)
-        }
-        "vsll.vv" => {
-            vvtype!(instr, VV_VSLL)
-        }
-        "vsmul.vv" => {
-            vvtype!(instr, VV_VSMUL)
-        }
-        "vsrl.vv" => {
-            vvtype!(instr, VV_VSRL)
-        }
-        "vsra.vv" => {
-            vvtype!(instr, VV_VSRA)
-        }
-        "vssrl.vv" => {
-            vvtype!(instr, VV_VSSRL)
-        }
-        "vssra.vv" => {
-            vvtype!(instr, VV_VSSRA)
-        }
+        // V Extension: VVType
+        "vadd.vv" => vvtype!(instr, VV_VADD),
+        "vsub.vv" => vvtype!(instr, VV_VSUB),
+        "vminu.vv" => vvtype!(instr, VV_VMINU),
+        "vmin.vv" => vvtype!(instr, VV_VMIN),
+        "vmaxu.vv" => vvtype!(instr, VV_VMAXU),
+        "vmax.vv" => vvtype!(instr, VV_VMAX),
+        "vand.vv" => vvtype!(instr, VV_VAND),
+        "vor.vv" => vvtype!(instr, VV_VOR),
+        "vxor.vv" => vvtype!(instr, VV_VXOR),
+        "vrgather.vv" => vvtype!(instr, VV_VRGATHER),
+        "vrgatherei16.vv" => vvtype!(instr, VV_VRGATHEREI16),
+        "vsaddu.vv" => vvtype!(instr, VV_VSADDU),
+        "vsadd.vv" => vvtype!(instr, VV_VSADD),
+        "vssubu.vv" => vvtype!(instr, VV_VSSUBU),
+        "vssub.vv" => vvtype!(instr, VV_VSSUB),
+        "vsll.vv" => vvtype!(instr, VV_VSLL),
+        "vsmul.vv" => vvtype!(instr, VV_VSMUL),
+        "vsrl.vv" => vvtype!(instr, VV_VSRL),
+        "vsra.vv" => vvtype!(instr, VV_VSRA),
+        "vssrl.vv" => vvtype!(instr, VV_VSSRL),
+        "vssra.vv" => vvtype!(instr, VV_VSSRA),
+
         // V Extension : VXType
         "vadd.vx" => vxtype!(instr, VX_VADD),
         "vsub.vx" => vxtype!(instr, VX_VSUB),
@@ -828,9 +787,8 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
         "vssra.vx" => vxtype!(instr, VX_VSSRA),
 
         // V Extension : VIType
-        "vadd.v.i" => {
-            vitype!(instr, VI_VADD, consts)
-        }
+        "vadd.v.i" => vitype!(instr, VI_VADD, consts),
+
         "vmv.v.i" => {
             check_nb_op(instr, 2)?;
             let mut operands = ops.clone();
@@ -842,6 +800,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
             };
             vitype!(instr, VI_VADD, consts)
         }
+        //
         // V Extension: Memory
         "vle8.v" => {
             check_nb_op(instr, 2)?;
@@ -900,7 +859,7 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
         // Unknown instructions
         _ => Err(Error::new(
             Span::call_site(),
-            format!("Unknown instruction: {}", instr.mnemonic),
+            format!("Unknown or unsupported instruction: {}", instr.mnemonic),
         )),
     }
 }
