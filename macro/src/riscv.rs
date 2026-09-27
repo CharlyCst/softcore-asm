@@ -62,6 +62,19 @@ macro_rules! mul {
     }};
 }
 
+/// Emit the tokens for DIV/REM type instructions
+macro_rules! divrem {
+    ($instr: ident, $op:ident, $signed:literal) => {{
+        check_nb_op($instr, 3)?;
+        let rd = Riscv::emit_reg(&$instr.operands[0]);
+        let rs1 = Riscv::emit_reg(&$instr.operands[1]);
+        let rs2 = Riscv::emit_reg(&$instr.operands[2]);
+        Ok(InstrToken::MayTrap(quote! {
+            (*core).execute(ast::$op((#rs2, #rs1, #rd, $signed)))
+        }))
+    }};
+}
+
 /// Emit the tokens for VVTYPE type instructions
 macro_rules! vvtype {
     ($instr: ident, $op:path) => {{
@@ -648,6 +661,12 @@ pub fn emit_softcore_instr<A>(instr: &Instr, ctx: &Context<A>) -> Result<InstrTo
         "mulh" => mul!(instr, 0b001),
         "mulhsu" => mul!(instr, 0b010),
         "mulhu" => mul!(instr, 0b011),
+
+        // DIV / REM
+        "div" => divrem!(instr, DIV, true),
+        "divu" => divrem!(instr, DIV, false),
+        "rem" => divrem!(instr, REM, true),
+        "remu" => divrem!(instr, REM, false),
 
         // Jumps (control-flow not emulated)
         "jr" => {
